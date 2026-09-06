@@ -7,7 +7,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Prism")
         self.resize(1280, 800)
+        self._close_after_worker = False
         self._settings = RenderSettings()
         self._viewport = ViewportWidget()
         self._viewport.set_camera(self._settings.camera)
@@ -82,9 +83,14 @@ class MainWindow(QMainWindow):
         dock.setMinimumWidth(280)
         return dock
 
-    def closeEvent(self, event: object) -> None:
-        self._worker.shutdown()
-        super().closeEvent(event)  # type: ignore[arg-type]
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self._worker.state is not WorkerState.STOPPED:
+            self._close_after_worker = True
+            self._viewport.setText("Stopping Blender…")
+            self._worker.shutdown()
+            event.ignore()
+            return
+        event.accept()
 
     def _choose_model(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -119,6 +125,8 @@ class MainWindow(QMainWindow):
     def _on_worker_state(self, state: str) -> None:
         if state == WorkerState.READY.value:
             self._viewport.setText("Import a model to begin")
+        elif state == WorkerState.STOPPED.value and self._close_after_worker:
+            self.close()
 
     def _on_worker_message(self, message: Message) -> None:
         if message.type == "model.imported":
