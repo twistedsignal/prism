@@ -2,6 +2,8 @@ from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import QApplication
 
+from prism.core.settings import CameraSettings, OutputSettings, RenderEngine, RenderSettings
+from prism.ui.settings_panel import SettingsPanel
 from prism.ui.viewport import ViewportWidget
 
 
@@ -35,3 +37,18 @@ def test_wheel_emits_camera_update(qtbot: object) -> None:
         QApplication.sendEvent(viewport, event)
     _camera, interacting = signal.args
     assert interacting is False
+
+
+def test_preset_settings_synchronize_controls(qtbot: object) -> None:
+    panel = SettingsPanel()
+    qtbot.addWidget(panel)
+    panel.set_settings(
+        RenderSettings(
+            camera=CameraSettings(yaw_degrees=111, pitch_degrees=-20, distance=8),
+            output=OutputSettings(width=640, height=360, engine=RenderEngine.CYCLES),
+        )
+    )
+    yaw, pitch, distance = panel._camera_controls
+    width, height, _transparent, engine = panel._output_controls
+    assert (yaw.value(), pitch.value(), distance.value()) == (111, -20, 8)
+    assert (width.value(), height.value(), engine.currentData()) == (640, 360, "cycles")

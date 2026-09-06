@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from prism.core.settings import RenderSettings
+
 
 class SettingsPanel(QScrollArea):
     camera_changed = Signal(float, float, float)
@@ -38,6 +40,43 @@ class SettingsPanel(QScrollArea):
         layout.addStretch(1)
         self.setWidget(content)
 
+    def set_settings(self, settings: RenderSettings) -> None:
+        controls = (
+            *self._camera_controls,
+            *self._lighting_controls,
+            *self._material_controls,
+            *self._geometry_controls,
+            *self._cavity_controls,
+            *self._output_controls,
+        )
+        previous = [control.blockSignals(True) for control in controls]
+        yaw, pitch, distance = self._camera_controls
+        yaw.setValue(settings.camera.yaw_degrees)
+        pitch.setValue(settings.camera.pitch_degrees)
+        distance.setValue(settings.camera.distance)
+        key, fill, world = self._lighting_controls
+        key.setValue(settings.lighting.key_energy)
+        fill.setValue(settings.lighting.fill_energy)
+        world.setValue(settings.lighting.world_strength)
+        original, roughness, metallic = self._material_controls
+        original.setChecked(settings.material.use_original)
+        roughness.setValue(settings.material.roughness)
+        metallic.setValue(settings.material.metallic)
+        subdivision, smooth = self._geometry_controls
+        subdivision.setValue(settings.geometry.subdivision_level)
+        smooth.setChecked(settings.geometry.smooth_shading)
+        enabled, ridge, valley = self._cavity_controls
+        enabled.setChecked(settings.cavity.enabled)
+        ridge.setValue(settings.cavity.ridge_strength)
+        valley.setValue(settings.cavity.valley_strength)
+        width, height, transparent, engine = self._output_controls
+        width.setValue(settings.output.width)
+        height.setValue(settings.output.height)
+        transparent.setChecked(settings.output.transparent_background)
+        engine.setCurrentIndex(0 if settings.output.engine.value == "eevee" else 1)
+        for control, was_blocked in zip(controls, previous, strict=True):
+            control.blockSignals(was_blocked)
+
     def _number(
         self, minimum: float, maximum: float, value: float, decimals: int = 2
     ) -> QDoubleSpinBox:
@@ -57,6 +96,7 @@ class SettingsPanel(QScrollArea):
             self._number(-89, 89, 25),
             self._number(0.01, 1000, 4),
         )
+        self._camera_controls = (yaw, pitch, distance)
         layout.addRow("Yaw", yaw)
         layout.addRow("Pitch", pitch)
         layout.addRow("Distance", distance)
@@ -76,6 +116,7 @@ class SettingsPanel(QScrollArea):
             self._number(0, 100000, 260),
             self._number(0, 10, 1),
         )
+        self._lighting_controls = (key, fill, world)
         layout.addRow("Key energy", key)
         layout.addRow("Fill energy", fill)
         layout.addRow("World", world)
@@ -91,6 +132,7 @@ class SettingsPanel(QScrollArea):
         original = QCheckBox()
         original.setChecked(True)
         roughness, metallic = self._number(0, 1, 0.45), self._number(0, 1, 0)
+        self._material_controls = (original, roughness, metallic)
         layout.addRow("Use original", original)
         layout.addRow("Roughness", roughness)
         layout.addRow("Metallic", metallic)
@@ -114,6 +156,7 @@ class SettingsPanel(QScrollArea):
         subdivision.setRange(0, 6)
         smooth = QCheckBox()
         smooth.setChecked(True)
+        self._geometry_controls = (subdivision, smooth)
         layout.addRow("Subdivision", subdivision)
         layout.addRow("Smooth shading", smooth)
         subdivision.valueChanged.connect(
@@ -130,6 +173,7 @@ class SettingsPanel(QScrollArea):
         enabled = QCheckBox()
         enabled.setChecked(True)
         ridge, valley = self._number(0, 2, 0.35), self._number(0, 2, 0.65)
+        self._cavity_controls = (enabled, ridge, valley)
         layout.addRow("Enabled", enabled)
         layout.addRow("Ridge", ridge)
         layout.addRow("Valley / AO", valley)
@@ -157,6 +201,7 @@ class SettingsPanel(QScrollArea):
         engine = QComboBox()
         engine.addItem("Eevee", "eevee")
         engine.addItem("Cycles", "cycles")
+        self._output_controls = (width, height, transparent, engine)
         layout.addRow("Width", width)
         layout.addRow("Height", height)
         layout.addRow("Transparent", transparent)

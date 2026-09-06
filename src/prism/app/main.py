@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         self._panel.geometry_changed.connect(self._set_geometry)
         self._panel.cavity_changed.connect(self._set_cavity)
         self._panel.output_changed.connect(self._set_output)
+        self._panel.set_settings(self._settings)
         self.setCentralWidget(self._viewport)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_for_panel())
         toolbar = QToolBar("Main", self)
@@ -123,6 +124,7 @@ class MainWindow(QMainWindow):
             self._show_worker_error(str(error))
             return
         self._viewport.set_camera(self._settings.camera)
+        self._panel.set_settings(self._settings)
         self._request_idle_preview()
 
     def _on_worker_state(self, state: str) -> None:
