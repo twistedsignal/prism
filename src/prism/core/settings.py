@@ -99,6 +99,16 @@ class CavitySettings:
     distance: float = 0.5
     ambient_occlusion: float = 0.5
 
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.ridge_strength <= 2.0:
+            raise ValueError("Cavity ridge strength must be between 0 and 2.")
+        if not 0.0 <= self.valley_strength <= 2.0:
+            raise ValueError("Cavity valley strength must be between 0 and 2.")
+        if not (self.distance >= 0.01 and self.distance <= 100.0):
+            raise ValueError("Cavity distance must be between 0.01 and 100.")
+        if not 0.0 <= self.ambient_occlusion <= 2.0:
+            raise ValueError("Ambient occlusion must be between 0 and 2.")
+
 
 @dataclass(frozen=True)
 class RenderSettings:

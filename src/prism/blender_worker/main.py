@@ -190,6 +190,16 @@ def apply_settings(payload: dict[str, Any]) -> None:
                 modifier.render_levels = level
             elif modifier is not None:
                 object.modifiers.remove(modifier)
+    cavity = payload.get("cavity")
+    if isinstance(cavity, dict):
+        light_settings = scene.world.light_settings
+        if bool(cavity.get("enabled", True)):
+            light_settings.ao_factor = float(
+                cavity.get("ambient_occlusion", cavity.get("valley_strength", 0.5))
+            )
+            light_settings.distance = max(float(cavity.get("distance", 0.5)), 0.01)
+        else:
+            light_settings.ao_factor = 0.0
 
 
 def render_image(payload: dict[str, Any], preview: bool) -> Path:
