@@ -10,6 +10,7 @@ import time
 import traceback
 import uuid
 from math import cos, radians, sin
+from multiprocessing import shared_memory
 from pathlib import Path
 from typing import Any
 
@@ -244,6 +245,38 @@ def render_image(payload: dict[str, Any], preview: bool) -> Path:
     return path
 
 
+def render_preview_frame(payload: dict[str, Any]) -> dict[str, Any]:
+    scene = bpy.context.scene
+    apply_settings(payload)
+    scene.render.engine = "BLENDER_EEVEE"
+    output = payload.get("output", {})
+    if not isinstance(output, dict):
+        output = {}
+    width = max(1, min(int(output.get("width", 512)), 16384))
+    height = max(1, min(int(output.get("height", 512)), 16384))
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
+    scene.render.resolution_percentage = 100
+    bpy.ops.render.render()
+    image = bpy.data.images.get("Render Result")
+    if image is None:
+        raise RuntimeError("Blender did not produce a preview image.")
+    rgba = bytearray(width * height * 4)
+    for index, value in enumerate(image.pixels):
+        rgba[index] = max(0, min(255, round(value * 255)))
+    memory = shared_memory.SharedMemory(create=True, size=len(rgba))
+    memory.buf[:] = rgba
+    name = memory.name
+    memory.close()
+    return {
+        "transport": "shared-memory",
+        "name": name,
+        "width": width,
+        "height": height,
+        "stride": width * 4,
+    }
+
+
 def handle(command: dict[str, Any]) -> None:
     global running
     identifier = command.get("id")
@@ -289,15 +322,11 @@ def handle(command: dict[str, Any]) -> None:
                 },
             )
         elif message_type == "preview.render":
-            frame = render_image(payload, preview=True)
+            frame = render_preview_frame(payload)
             reply(
                 identifier,
                 "preview.frame",
-                {
-                    "transport": "png-path",
-                    "path": str(frame),
-                    "generation": payload.get("generation", 0),
-                },
+                {**frame, "generation": payload.get("generation", 0)},
             )
         elif message_type == "output.render":
             output_path = render_image(payload, preview=False)

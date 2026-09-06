@@ -24,6 +24,7 @@ from prism.renderer.client import BlenderWorkerClient, WorkerState
 from prism.renderer.discovery import discover_blender
 from prism.renderer.protocol import Message
 from prism.renderer.scheduler import PreviewQuality, PreviewRequest, PreviewScheduler
+from prism.renderer.shared_memory import take_preview_frame
 from prism.ui.settings_panel import SettingsPanel
 from prism.ui.viewport import ViewportWidget
 
@@ -165,7 +166,13 @@ class MainWindow(QMainWindow):
             self._viewport.setText("Rendering preview…")
             self._request_idle_preview()
         elif message.type == "preview.frame":
-            self._viewport.set_frame(str(message.payload["path"]))
+            try:
+                if message.payload.get("transport") == "shared-memory":
+                    self._viewport.set_pixmap(take_preview_frame(message.payload))
+                else:
+                    self._viewport.set_frame(str(message.payload["path"]))
+            except (KeyError, OSError, ValueError) as error:
+                self._show_worker_error(f"Prism could not display the preview: {error}")
             self._scheduler.complete(int(message.payload.get("generation", -1)))
         elif message.type == "output.rendered":
             self.statusBar().showMessage(f"Exported {message.payload['path']}", 5_000)

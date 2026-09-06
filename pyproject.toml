@@ -24,6 +24,7 @@ packages = ["src/prism"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = ["blender: requires a working Blender executable"]
 
 [tool.ruff]
 target-version = "py312"

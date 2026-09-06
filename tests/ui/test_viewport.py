@@ -1,8 +1,11 @@
+from multiprocessing import shared_memory
+
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import QApplication
 
 from prism.core.settings import CameraSettings, OutputSettings, RenderEngine, RenderSettings
+from prism.renderer.shared_memory import take_preview_frame
 from prism.ui.settings_panel import SettingsPanel
 from prism.ui.viewport import ViewportWidget
 
@@ -52,3 +55,12 @@ def test_preset_settings_synchronize_controls(qtbot: object) -> None:
     width, height, _transparent, engine = panel._output_controls
     assert (yaw.value(), pitch.value(), distance.value()) == (111, -20, 8)
     assert (width.value(), height.value(), engine.currentData()) == (640, 360, "cycles")
+
+
+def test_shared_memory_preview_frame_becomes_pixmap(qtbot: object) -> None:
+    memory = shared_memory.SharedMemory(create=True, size=16)
+    memory.buf[:] = bytes([255, 0, 0, 255] * 4)
+    pixmap = take_preview_frame({"name": memory.name, "width": 2, "height": 2, "stride": 8})
+    memory.close()
+    qtbot.addWidget(ViewportWidget())
+    assert (pixmap.width(), pixmap.height()) == (2, 2)

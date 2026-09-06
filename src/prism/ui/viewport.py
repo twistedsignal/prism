@@ -38,6 +38,13 @@ class ViewportWidget(QLabel):
         self._frame = pixmap
         self._update_pixmap()
 
+    def set_pixmap(self, pixmap: QPixmap) -> None:
+        if pixmap.isNull():
+            self.setText("Blender returned an unreadable preview frame.")
+            return
+        self._frame = pixmap
+        self._update_pixmap()
+
     def resizeEvent(self, event: object) -> None:
         super().resizeEvent(event)  # type: ignore[arg-type]
         self._update_pixmap()
