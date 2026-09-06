@@ -44,7 +44,11 @@ class MainWindow(QMainWindow):
         self._idle_timer.setSingleShot(True)
         self._idle_timer.setInterval(220)
         self._idle_timer.timeout.connect(self._request_idle_preview)
-        worker_script = Path(__file__).parents[1] / "blender_worker" / "main.py"
+        bundle_root = getattr(sys, "_MEIPASS", None)
+        if isinstance(bundle_root, str):
+            worker_script = Path(bundle_root) / "prism" / "blender_worker" / "main.py"
+        else:
+            worker_script = Path(__file__).parents[1] / "blender_worker" / "main.py"
         self._worker = BlenderWorkerClient(worker_script, self)
         self._worker.state_changed.connect(self._on_worker_state)
         self._worker.message_received.connect(self._on_worker_message)
