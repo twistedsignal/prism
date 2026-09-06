@@ -60,6 +60,13 @@ class BlenderWorkerClient(QObject):
             str(blender_path), ["--background", "--python", str(self._worker_script)]
         )
 
+    def restart(self, blender_path: Path) -> None:
+        if self._process.state() is not QProcess.ProcessState.NotRunning:
+            self.user_error.emit("Blender is still stopping. Try restarting again in a moment.")
+            return
+        self._set_state(WorkerState.STOPPED)
+        self.start(blender_path)
+
     def send(self, message_type: str, payload: dict[str, Any]) -> int | None:
         if self._process.state() is not QProcess.ProcessState.Running:
             self.user_error.emit("Blender is not running.")

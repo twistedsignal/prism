@@ -17,5 +17,4 @@ On shutdown, Prism cancels queued preview work, requests worker shutdown, closes
 {"v":1,"id":7,"type":"worker.ready","payload":{"blender_version":"4.2"}}
 ```
 
-Implemented command names are `worker.hello`, `worker.shutdown`, `model.import`, `scene.update`, `preview.render`, and `output.render`. Replies use `*.ok` or `*.error`. Error payloads contain a stable `code` and a user-facing `message`; tracebacks remain in worker stderr.
-
+Implemented command names are `worker.hello`, `worker.shutdown`, `model.import`, `camera.frame`, `preview.render`, and `output.render`. Replies use command-specific success types or `*.error`. Error payloads contain a stable `code`, an optional preview generation, and a user-facing `message`; tracebacks remain in worker stderr.

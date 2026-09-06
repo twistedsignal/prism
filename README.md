@@ -25,3 +25,5 @@ The first settings panel controls camera position, key/fill/world lighting, mate
 ## License
 
 Prism is licensed under GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+For packaging instructions, see [docs/packaging.md](docs/packaging.md).

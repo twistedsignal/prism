@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QToolBar,
 )
 
+from prism.core.model_types import validate_model_path
 from prism.core.presets import PresetError, decode, encode
 from prism.core.settings import CameraSettings, RenderEngine, RenderSettings
 from prism.renderer.client import BlenderWorkerClient, WorkerState
@@ -72,6 +73,9 @@ class MainWindow(QMainWindow):
         paste_preset_action = QAction("Paste preset", self)
         paste_preset_action.triggered.connect(self._paste_preset)
         toolbar.addAction(paste_preset_action)
+        restart_action = QAction("Restart Blender", self)
+        restart_action.triggered.connect(self._restart_worker)
+        toolbar.addAction(restart_action)
         blender = discover_blender()
         if blender is None:
             self._viewport.setText("Blender was not found on PATH.")
@@ -101,8 +105,13 @@ class MainWindow(QMainWindow):
             "3D models (*.blend *.glb *.gltf *.fbx *.obj *.stl)",
         )
         if path:
+            try:
+                model_path = validate_model_path(Path(path))
+            except ValueError as error:
+                self._show_worker_error(str(error))
+                return
             self._viewport.setText("Importing model…")
-            self._worker.send("model.import", {"path": path})
+            self._worker.send("model.import", {"path": str(model_path)})
 
     def _export_image(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -157,12 +166,25 @@ class MainWindow(QMainWindow):
         elif message.type == "output.rendered":
             self.statusBar().showMessage(f"Exported {message.payload['path']}", 5_000)
         elif message.type.endswith(".error"):
+            generation = message.payload.get("generation")
+            if isinstance(generation, int):
+                self._scheduler.complete(generation)
             self._show_worker_error(
                 str(message.payload.get("message", "Blender could not complete that request."))
             )
 
     def _show_worker_error(self, message: str) -> None:
         QMessageBox.warning(self, "Prism", message)
+
+    def _restart_worker(self) -> None:
+        blender = discover_blender()
+        if blender is None:
+            self._show_worker_error("Blender was not found on PATH.")
+            return
+        if self._worker.state is WorkerState.FAILED:
+            self._worker.restart(blender)
+        elif self._worker.state is WorkerState.STOPPED:
+            self._worker.start(blender)
 
     def _set_camera(self, camera: CameraSettings, interacting: bool) -> None:
         self._settings = replace(self._settings, camera=camera)

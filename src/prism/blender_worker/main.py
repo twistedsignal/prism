@@ -310,7 +310,15 @@ def handle(command: dict[str, Any]) -> None:
             )
     except (KeyError, RuntimeError, TypeError, ValueError) as error:
         print(traceback.format_exc(), file=sys.stderr)
-        reply(identifier, f"{message_type}.error", {"code": "worker_error", "message": str(error)})
+        reply(
+            identifier,
+            f"{message_type}.error",
+            {
+                "code": "worker_error",
+                "message": str(error),
+                "generation": payload.get("generation"),
+            },
+        )
 
 
 def drain_commands() -> None:
