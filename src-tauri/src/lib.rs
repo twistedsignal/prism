@@ -16,13 +16,17 @@ struct RenderSettings {
 struct Model { id: String, name: String, folder: String, source_path: String, preview_path: Option<String>, settings: RenderSettings }
 
 #[derive(Clone, Serialize, Deserialize)]
-struct Project { id: String, name: String, folders: Vec<String>, models: Vec<Model> }
+struct NamedPreset { name: String, settings: RenderSettings }
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Project { id: String, name: String, folders: Vec<String>, models: Vec<Model>, #[serde(default)] presets: Vec<NamedPreset> }
 
 fn defaults() -> RenderSettings { RenderSettings { width: 1024, height: 1024, format: "PNG".into(), transparent: false, background: [0.055, 0.063, 0.086], orbit: [35.0, 25.0], focal_length: 55.0, framing: 1.45, key_strength: 1100.0, fill_strength: 260.0, world_strength: 1.0, cavity: true, cavity_strength: 0.65 } }
 fn root(app: &AppHandle) -> Result<PathBuf, String> { let path = app.path().app_data_dir().map_err(|e| e.to_string())?.join("projects"); fs::create_dir_all(&path).map_err(|e| e.to_string())?; Ok(path) }
 fn manifest(app: &AppHandle, id: &str) -> Result<PathBuf, String> { Ok(root(app)?.join(id).join("prism.json")) }
 fn load(app: &AppHandle, id: &str) -> Result<Project, String> { serde_json::from_str(&fs::read_to_string(manifest(app, id)?).map_err(|e| e.to_string())?).map_err(|e| e.to_string()) }
 fn save(app: &AppHandle, project: &Project) -> Result<(), String> { let path = manifest(app, &project.id)?; fs::write(path, serde_json::to_string_pretty(project).map_err(|e| e.to_string())?).map_err(|e| e.to_string()) }
+fn global_presets(app: &AppHandle) -> Result<PathBuf, String> { Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("global-presets.json")) }
 
 #[tauri::command]
 fn list_projects(app: AppHandle) -> Result<Vec<Project>, String> {
@@ -33,7 +37,7 @@ fn list_projects(app: AppHandle) -> Result<Vec<Project>, String> {
 
 #[tauri::command]
 fn create_project(app: AppHandle, name: String) -> Result<Project, String> {
-    let project = Project { id: Uuid::new_v4().to_string(), name, folders: vec!["Models".into()], models: vec![] };
+    let project = Project { id: Uuid::new_v4().to_string(), name, folders: vec!["Models".into()], models: vec![], presets: vec![] };
     fs::create_dir_all(root(&app)?.join(&project.id).join("models")).map_err(|e| e.to_string())?; save(&app, &project)?; Ok(project)
 }
 
@@ -51,6 +55,24 @@ fn save_model_settings(app: AppHandle, project_id: String, model_id: String, set
 }
 
 #[tauri::command]
+fn save_preset(app: AppHandle, project_id: String, name: String, settings: RenderSettings, global: bool) -> Result<(), String> {
+    let preset = NamedPreset { name, settings };
+    if global {
+        let path = global_presets(&app)?;
+        let mut presets: Vec<NamedPreset> = if path.exists() { serde_json::from_str(&fs::read_to_string(&path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())? } else { vec![] };
+        presets.retain(|entry| entry.name != preset.name);
+        presets.push(preset);
+        fs::write(path, serde_json::to_string_pretty(&presets).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    } else {
+        let mut project = load(&app, &project_id)?;
+        project.presets.retain(|entry| entry.name != preset.name);
+        project.presets.push(preset);
+        save(&app, &project)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn blender_status() -> Result<String, String> { Command::new("blender").arg("--version").output().map(|output| String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("Blender found").to_string()).map_err(|_| "Blender was not found on PATH. Set it up in Prism settings, then restart the app.".into()) }
 
 #[tauri::command]
@@ -65,4 +87,4 @@ fn render_model(app: AppHandle, project_id: String, model_id: String, preview: b
     model.preview_path = Some(output.to_string_lossy().to_string()); save(&app, &project)?; Ok(output.to_string_lossy().to_string())
 }
 
-pub fn run() { tauri::Builder::default().plugin(tauri_plugin_dialog::init()).invoke_handler(tauri::generate_handler![list_projects, create_project, import_model, save_model_settings, blender_status, render_model]).run(tauri::generate_context!()).expect("Prism failed to start"); }
+pub fn run() { tauri::Builder::default().plugin(tauri_plugin_dialog::init()).invoke_handler(tauri::generate_handler![list_projects, create_project, import_model, save_model_settings, save_preset, blender_status, render_model]).run(tauri::generate_context!()).expect("Prism failed to start"); }
