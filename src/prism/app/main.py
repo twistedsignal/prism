@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from prism.core.model_types import validate_model_path
 from prism.core.presets import PresetError, decode, encode
-from prism.core.settings import CameraSettings, Projection, RenderEngine, RenderSettings
+from prism.core.settings import CameraSettings, Color, Projection, RenderEngine, RenderSettings
 from prism.renderer.client import BlenderWorkerClient, WorkerState
 from prism.renderer.discovery import discover_blender
 from prism.renderer.protocol import Message
@@ -240,7 +240,15 @@ class MainWindow(QMainWindow):
         )
         self._request_idle_preview()
 
-    def _set_material(self, original: bool, roughness: float, metallic: float) -> None:
+    def _set_material(
+        self,
+        original: bool,
+        roughness: float,
+        metallic: float,
+        red: float,
+        green: float,
+        blue: float,
+    ) -> None:
         self._settings = replace(
             self._settings,
             material=replace(
@@ -248,6 +256,7 @@ class MainWindow(QMainWindow):
                 use_original=original,
                 roughness=roughness,
                 metallic=metallic,
+                base_color=Color(red, green, blue),
             ),
         )
         self._request_idle_preview()

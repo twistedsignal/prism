@@ -180,7 +180,15 @@ def apply_settings(payload: dict[str, Any]) -> None:
         override = bpy.data.materials.get("Prism Override") or bpy.data.materials.new(
             "Prism Override"
         )
-        override.diffuse_color = (0.8, 0.8, 0.8, 1.0)
+        base_color = material.get("base_color", {})
+        if not isinstance(base_color, dict):
+            base_color = {}
+        override.diffuse_color = (
+            float(base_color.get("red", 0.8)),
+            float(base_color.get("green", 0.8)),
+            float(base_color.get("blue", 0.8)),
+            1.0,
+        )
         override.metallic = float(material.get("metallic", 0.0))
         override.roughness = float(material.get("roughness", 0.45))
         for object in scene.objects:

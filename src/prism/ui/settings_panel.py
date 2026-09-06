@@ -22,7 +22,7 @@ class SettingsPanel(QScrollArea):
     camera_changed = Signal(float, float, float, float, float)
     projection_changed = Signal(bool)
     lighting_changed = Signal(float, float, float)
-    material_changed = Signal(bool, float, float)
+    material_changed = Signal(bool, float, float, float, float, float)
     geometry_changed = Signal(int, bool)
     cavity_changed = Signal(bool, float, float)
     output_changed = Signal(int, int, bool, str)
@@ -63,10 +63,13 @@ class SettingsPanel(QScrollArea):
         key.setValue(settings.lighting.key_energy)
         fill.setValue(settings.lighting.fill_energy)
         world.setValue(settings.lighting.world_strength)
-        original, roughness, metallic = self._material_controls
+        original, roughness, metallic, red, green, blue = self._material_controls
         original.setChecked(settings.material.use_original)
         roughness.setValue(settings.material.roughness)
         metallic.setValue(settings.material.metallic)
+        red.setValue(settings.material.base_color.red)
+        green.setValue(settings.material.base_color.green)
+        blue.setValue(settings.material.base_color.blue)
         subdivision, smooth = self._geometry_controls
         subdivision.setValue(settings.geometry.subdivision_level)
         smooth.setChecked(settings.geometry.smooth_shading)
@@ -149,19 +152,33 @@ class SettingsPanel(QScrollArea):
         original = QCheckBox()
         original.setChecked(True)
         roughness, metallic = self._number(0, 1, 0.45), self._number(0, 1, 0)
-        self._material_controls = (original, roughness, metallic)
+        red, green, blue = self._number(0, 1, 0.8), self._number(0, 1, 0.8), self._number(0, 1, 0.8)
+        self._material_controls = (original, roughness, metallic, red, green, blue)
         layout.addRow("Use original", original)
         layout.addRow("Roughness", roughness)
         layout.addRow("Metallic", metallic)
+        layout.addRow("Red", red)
+        layout.addRow("Green", green)
+        layout.addRow("Blue", blue)
         original.toggled.connect(
             lambda _value: self.material_changed.emit(
-                original.isChecked(), roughness.value(), metallic.value()
+                original.isChecked(),
+                roughness.value(),
+                metallic.value(),
+                red.value(),
+                green.value(),
+                blue.value(),
             )
         )
-        for control in (roughness, metallic):
+        for control in (roughness, metallic, red, green, blue):
             control.valueChanged.connect(
                 lambda _value: self.material_changed.emit(
-                    original.isChecked(), roughness.value(), metallic.value()
+                    original.isChecked(),
+                    roughness.value(),
+                    metallic.value(),
+                    red.value(),
+                    green.value(),
+                    blue.value(),
                 )
             )
         return group
