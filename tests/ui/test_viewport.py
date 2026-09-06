@@ -51,9 +51,15 @@ def test_preset_settings_synchronize_controls(qtbot: object) -> None:
             output=OutputSettings(width=640, height=360, engine=RenderEngine.CYCLES),
         )
     )
-    yaw, pitch, distance = panel._camera_controls
+    yaw, pitch, distance, roll, field_of_view = panel._camera_controls
     width, height, _transparent, engine = panel._output_controls
-    assert (yaw.value(), pitch.value(), distance.value()) == (111, -20, 8)
+    assert (yaw.value(), pitch.value(), distance.value(), roll.value(), field_of_view.value()) == (
+        111,
+        -20,
+        8,
+        0,
+        50,
+    )
     assert (width.value(), height.value(), engine.currentData()) == (640, 360, "cycles")
 
 

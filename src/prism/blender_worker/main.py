@@ -147,12 +147,17 @@ def apply_settings(payload: dict[str, Any]) -> None:
         )
         scene.camera.location = position
         scene.camera.rotation_euler = (target - position).to_track_quat("-Z", "Y").to_euler()
+        scene.camera.rotation_euler.rotate_axis(
+            "Z", radians(float(camera_settings.get("roll_degrees", 0.0)))
+        )
         if camera_settings.get("projection") == "orthographic":
             scene.camera.data.type = "ORTHO"
             scene.camera.data.ortho_scale = float(camera_settings.get("orthographic_scale", 4.0))
         else:
             scene.camera.data.type = "PERSP"
-            scene.camera.data.lens = 50.0
+            scene.camera.data.angle = radians(
+                float(camera_settings.get("field_of_view_degrees", 50.0))
+            )
     output = payload.get("output")
     if isinstance(output, dict):
         scene.render.film_transparent = bool(output.get("transparent_background", False))

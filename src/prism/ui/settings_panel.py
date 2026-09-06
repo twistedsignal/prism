@@ -19,7 +19,7 @@ from prism.core.settings import RenderSettings
 
 
 class SettingsPanel(QScrollArea):
-    camera_changed = Signal(float, float, float)
+    camera_changed = Signal(float, float, float, float, float)
     projection_changed = Signal(bool)
     lighting_changed = Signal(float, float, float)
     material_changed = Signal(bool, float, float)
@@ -52,10 +52,12 @@ class SettingsPanel(QScrollArea):
             *self._output_controls,
         )
         previous = [control.blockSignals(True) for control in controls]
-        yaw, pitch, distance = self._camera_controls
+        yaw, pitch, distance, roll, field_of_view = self._camera_controls
         yaw.setValue(settings.camera.yaw_degrees)
         pitch.setValue(settings.camera.pitch_degrees)
         distance.setValue(settings.camera.distance)
+        roll.setValue(settings.camera.roll_degrees)
+        field_of_view.setValue(settings.camera.field_of_view_degrees)
         self._projection_control.setChecked(settings.camera.projection.value == "orthographic")
         key, fill, world = self._lighting_controls
         key.setValue(settings.lighting.key_energy)
@@ -94,22 +96,30 @@ class SettingsPanel(QScrollArea):
         group.setCheckable(True)
         group.setChecked(True)
         layout = QFormLayout(group)
-        yaw, pitch, distance = (
+        yaw, pitch, distance, roll, field_of_view = (
             self._number(-360, 360, 35),
             self._number(-89, 89, 25),
             self._number(0.01, 1000, 4),
+            self._number(-180, 180, 0),
+            self._number(1, 179, 50),
         )
-        self._camera_controls = (yaw, pitch, distance)
+        self._camera_controls = (yaw, pitch, distance, roll, field_of_view)
         orthographic = QCheckBox()
         self._projection_control = orthographic
         layout.addRow("Yaw", yaw)
         layout.addRow("Pitch", pitch)
         layout.addRow("Distance", distance)
+        layout.addRow("Roll", roll)
+        layout.addRow("FOV", field_of_view)
         layout.addRow("Orthographic", orthographic)
-        for control in (yaw, pitch, distance):
+        for control in (yaw, pitch, distance, roll, field_of_view):
             control.valueChanged.connect(
                 lambda _value: self.camera_changed.emit(
-                    yaw.value(), pitch.value(), distance.value()
+                    yaw.value(),
+                    pitch.value(),
+                    distance.value(),
+                    roll.value(),
+                    field_of_view.value(),
                 )
             )
         orthographic.toggled.connect(self.projection_changed)

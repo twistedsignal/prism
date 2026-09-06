@@ -211,9 +211,16 @@ class MainWindow(QMainWindow):
         else:
             self._request_idle_preview()
 
-    def _set_camera_values(self, yaw: float, pitch: float, distance: float) -> None:
+    def _set_camera_values(
+        self, yaw: float, pitch: float, distance: float, roll: float, field_of_view: float
+    ) -> None:
         camera = replace(
-            self._settings.camera, yaw_degrees=yaw, pitch_degrees=pitch, distance=distance
+            self._settings.camera,
+            yaw_degrees=yaw,
+            pitch_degrees=pitch,
+            distance=distance,
+            roll_degrees=roll,
+            field_of_view_degrees=field_of_view,
         )
         self._viewport.set_camera(camera)
         self._set_camera(camera, False)
