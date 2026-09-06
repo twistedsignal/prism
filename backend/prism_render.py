@@ -110,7 +110,8 @@ def render(source, output, settings):
     if settings.get("cavity", True):
         apply_cavity(meshes, float(settings.get("cavityStrength", 0.65)), diameter)
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
+    available_engines = {item.identifier for item in scene.render.bl_rna.properties["engine"].enum_items}
+    scene.render.engine = "BLENDER_EEVEE_NEXT" if "BLENDER_EEVEE_NEXT" in available_engines else "BLENDER_EEVEE"
     scene.render.resolution_x = int(settings.get("width", 1024))
     scene.render.resolution_y = int(settings.get("height", 1024))
     scene.render.resolution_percentage = 100
@@ -118,7 +119,13 @@ def render(source, output, settings):
     scene.render.image_settings.color_mode = "RGBA" if settings.get("transparent", False) else "RGB"
     scene.render.film_transparent = bool(settings.get("transparent", False))
     scene.render.filepath = output
-    scene.world.color = tuple(settings.get("background", [0.055, 0.063, 0.086]))
+    world = bpy.data.worlds.new("Prism World")
+    world.use_nodes = True
+    scene.world = world
+    world_background = world.node_tree.nodes.get("Background")
+    background_color = settings.get("background", [0.055, 0.063, 0.086])
+    world_background.inputs["Color"].default_value = (*background_color, 1)
+    world_background.inputs["Strength"].default_value = float(settings.get("worldStrength", 1))
 
     camera_data = bpy.data.cameras.new("Prism Camera")
     camera_data.lens = float(settings.get("focalLength", 55))
@@ -134,8 +141,6 @@ def render(source, output, settings):
     strength = float(settings.get("keyStrength", 1100))
     light("Key", centre + Vector((diameter, -diameter, diameter * 1.4)), strength, diameter, centre)
     light("Fill", centre + Vector((-diameter, -diameter * .4, diameter * .4)), float(settings.get("fillStrength", 260)), diameter * 1.5, centre)
-    scene.world.color = tuple(settings.get("background", [0.055, 0.063, 0.086]))
-    scene.world.color = tuple(channel * float(settings.get("worldStrength", 1)) for channel in scene.world.color)
     scene.render.filepath = output
     bpy.ops.render.render(write_still=True)
 

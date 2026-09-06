@@ -76,15 +76,18 @@ fn save_preset(app: AppHandle, project_id: String, name: String, settings: Rende
 fn blender_status() -> Result<String, String> { Command::new("blender").arg("--version").output().map(|output| String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("Blender found").to_string()).map_err(|_| "Blender was not found on PATH. Set it up in Prism settings, then restart the app.".into()) }
 
 #[tauri::command]
-fn render_model(app: AppHandle, project_id: String, model_id: String, preview: bool) -> Result<String, String> {
+fn render_model(app: AppHandle, project_id: String, model_id: String, preview: bool, output_path: Option<String>) -> Result<String, String> {
     let mut project = load(&app, &project_id)?; let model = project.models.iter_mut().find(|entry| entry.id == model_id).ok_or("Model not found.")?; let dir = root(&app)?.join(&project_id).join("renders"); fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let mut settings = model.settings.clone(); if preview { settings.width = 640; settings.height = 640; settings.format = "PNG".into(); }
     let settings_path = dir.join(format!("{}.json", model.id)); fs::write(&settings_path, serde_json::to_string(&settings).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    let suffix = match settings.format.as_str() { "JPEG" => "jpg", "WEBP" => "webp", "OPEN_EXR" => "exr", _ => "png" }; let output = dir.join(format!("{}-{}.{}", model.id, Uuid::new_v4(), suffix));
+    let suffix = match settings.format.as_str() { "JPEG" => "jpg", "WEBP" => "webp", "OPEN_EXR" => "exr", _ => "png" };
+    let output = match output_path { Some(value) => PathBuf::from(value), None => dir.join(format!("{}-{}.{}", model.id, Uuid::new_v4(), suffix)) };
+    if let Some(parent) = output.parent() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("backend/prism_render.py");
     let result = Command::new("blender").args(["--background", "--python", script.to_str().ok_or("Invalid script path")?, "--", "--input", &model.source_path, "--output", output.to_str().ok_or("Invalid output path")?, "--settings", settings_path.to_str().ok_or("Invalid settings path")?]).output().map_err(|_| "Could not start Blender. Install Blender or add it to PATH.".to_string())?;
     if !result.status.success() { return Err(String::from_utf8_lossy(&result.stderr).lines().last().unwrap_or("Blender render failed.").to_string()); }
-    model.preview_path = Some(output.to_string_lossy().to_string()); save(&app, &project)?; Ok(output.to_string_lossy().to_string())
+    if preview { model.preview_path = Some(output.to_string_lossy().to_string()); save(&app, &project)?; }
+    Ok(output.to_string_lossy().to_string())
 }
 
 pub fn run() { tauri::Builder::default().plugin(tauri_plugin_dialog::init()).invoke_handler(tauri::generate_handler![list_projects, create_project, import_model, save_model_settings, save_preset, blender_status, render_model]).run(tauri::generate_context!()).expect("Prism failed to start"); }

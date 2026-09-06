@@ -10,6 +10,8 @@ import "./styles.css";
 
 type Toast = { tone: "error" | "notice"; text: string } | null;
 const formatChoices = ["PNG", "JPEG", "WEBP", "OPEN_EXR"];
+const extensionFor = (format: string): string => ({ PNG: "png", JPEG: "jpg", WEBP: "webp", OPEN_EXR: "exr" }[format] ?? "png");
+const formatForPath = (path: string): string | null => ({ png: "PNG", jpg: "JPEG", jpeg: "JPEG", webp: "WEBP", exr: "OPEN_EXR" }[path.split(".").pop()?.toLowerCase() ?? ""] ?? null);
 
 function App(): React.JSX.Element {
   const [projects, setProjects] = React.useState<Project[]>([]);
@@ -48,10 +50,19 @@ function App(): React.JSX.Element {
     setProjects((current) => current.map((project) => project.id !== activeProject.id ? project : { ...project, models: project.models.map((model) => model.id === activeModel.id ? { ...model, settings } : model) }));
   };
   const persist = async (): Promise<void> => { if (activeProject && activeModel) await invoke("save_model_settings", { projectId: activeProject.id, modelId: activeModel.id, settings: activeModel.settings }); };
-  const render = async (preview: boolean): Promise<void> => {
+  const render = async (preview: boolean, outputPath: string | null = null, format: string | null = null): Promise<void> => {
     if (!activeModel || !activeProject) return;
     setRendering(true); setToast(null);
-    try { await persist(); const previewPath = await invoke<string>("render_model", { projectId: activeProject.id, modelId: activeModel.id, preview }); setProjects((current) => current.map((project) => project.id !== activeProject.id ? project : { ...project, models: project.models.map((model) => model.id === activeModel.id ? { ...model, previewPath } : model) })); setToast({ tone: "notice", text: preview ? "Preview rendered." : "Export rendered. The output path is in the project render folder." }); } catch (error) { setToast({ tone: "error", text: String(error) }); } finally { setRendering(false); }
+    const settings = { ...activeModel.settings, ...(format ? { format } : {}) };
+    try { await invoke("save_model_settings", { projectId: activeProject.id, modelId: activeModel.id, settings }); const previewPath = await invoke<string>("render_model", { projectId: activeProject.id, modelId: activeModel.id, preview, outputPath }); setProjects((current) => current.map((project) => project.id !== activeProject.id ? project : { ...project, models: project.models.map((model) => model.id === activeModel.id ? { ...model, settings, previewPath: preview ? previewPath : model.previewPath } : model) })); setToast({ tone: "notice", text: preview ? "Preview rendered." : "Image exported." }); } catch (error) { setToast({ tone: "error", text: String(error) }); } finally { setRendering(false); }
+  };
+  const exportModel = async (): Promise<void> => {
+    if (!activeModel) return;
+    const selected = await save({ defaultPath: `${activeModel.name}.${extensionFor(activeModel.settings.format)}`, filters: [{ name: "PNG image", extensions: ["png"] }, { name: "JPEG image", extensions: ["jpg", "jpeg"] }, { name: "WebP image", extensions: ["webp"] }, { name: "OpenEXR image", extensions: ["exr"] }] });
+    if (typeof selected !== "string") return;
+    const format = formatForPath(selected);
+    if (!format) return setToast({ tone: "error", text: "Choose a PNG, JPEG, WebP, or EXR filename." });
+    await render(false, selected, format);
   };
   const copyPreset = async (): Promise<void> => { if (!activeModel) return; await navigator.clipboard.writeText(encodePreset(activeModel.settings)); setToast({ tone: "notice", text: "Compact preset code copied." }); };
   const importPreset = async (): Promise<void> => { const code = window.prompt("Paste a Prism preset code")?.trim(); if (!code) return; try { updateSettings(decodePreset(code)); setToast({ tone: "notice", text: "Preset applied. Render or save to keep it." }); } catch (error) { setToast({ tone: "error", text: error instanceof Error ? error.message : String(error) }); } };
@@ -67,7 +78,7 @@ function App(): React.JSX.Element {
         <div className="sidebar-foot"><button onClick={() => setSettingsOpen(true)}><Settings2 size={15}/> App settings</button><p>{blender}</p></div>
       </aside>
       <main className="workspace">{activeModel ? <Viewport model={activeModel} rendering={rendering} onPreview={() => void render(true)} /> : <Welcome onImport={importModel} onCreate={createProject}/>}</main>
-      {dockOpen && <SettingsDock model={activeModel} disabled={rendering} onUpdate={updateSettings} onPersist={() => void persist()} onPreview={() => void render(true)} onExport={() => void render(false)} onCopyPreset={() => void copyPreset()} onImportPreset={() => void importPreset()} onSavePreset={savePreset}/>}
+      {dockOpen && <SettingsDock model={activeModel} disabled={rendering} onUpdate={updateSettings} onPersist={() => void persist()} onPreview={() => void render(true)} onExport={() => void exportModel()} onCopyPreset={() => void copyPreset()} onImportPreset={() => void importPreset()} onSavePreset={savePreset}/>}
     </div>
     {settingsOpen && <AppSettings blender={blender} onClose={() => setSettingsOpen(false)}/>} {toast && <div className={`toast ${toast.tone}`}><span>{toast.text}</span><button onClick={() => setToast(null)}><X size={14}/></button></div>}
   </div>;
