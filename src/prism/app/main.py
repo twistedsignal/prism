@@ -174,8 +174,13 @@ class MainWindow(QMainWindow):
             except (KeyError, OSError, ValueError) as error:
                 self._show_worker_error(f"Prism could not display the preview: {error}")
             self._scheduler.complete(int(message.payload.get("generation", -1)))
+            elapsed = message.payload.get("elapsed_ms")
+            if isinstance(elapsed, (int, float)):
+                self.statusBar().showMessage(f"Preview {elapsed:.0f} ms", 1_500)
         elif message.type == "output.rendered":
-            self.statusBar().showMessage(f"Exported {message.payload['path']}", 5_000)
+            elapsed = message.payload.get("elapsed_ms")
+            suffix = f" in {elapsed:.0f} ms" if isinstance(elapsed, (int, float)) else ""
+            self.statusBar().showMessage(f"Exported {message.payload['path']}{suffix}", 5_000)
         elif message.type.endswith(".error"):
             generation = message.payload.get("generation")
             if isinstance(generation, int):

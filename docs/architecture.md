@@ -6,7 +6,7 @@ The application starts one Blender worker in background mode. Commands and small
 
 The UI changes a typed `RenderSettings` instance. `PreviewScheduler` accepts the newest requested state while a render is in progress, then dispatches only that newest state once the worker is available. It uses a low interaction profile while dragging and schedules a higher-quality frame after a short idle delay.
 
-The first frame transport uses a temporary PNG path supplied in a worker reply. The protocol leaves frame metadata separate so a later shared-memory RGBA transport can replace that path without changing UI state or command semantics. The replacement will include a generation number, dimensions, stride, and shared-memory name. Qt creates a `QImage` view only while that generation is valid.
+Preview pixels use a one-shot shared-memory RGBA buffer. Blender reports the shared-memory name, dimensions, stride, generation, and render duration. Qt maps that memory into a `QImage`, copies it into a `QPixmap`, then closes and unlinks the buffer. This avoids PNG encoding and decoding on the preview path.
 
 On shutdown, Prism cancels queued preview work, requests worker shutdown, closes standard streams, then terminates the child only after a timeout. A crash turns the worker state into `FAILED` and lets the UI show a plain-language recovery action.
 
@@ -17,4 +17,4 @@ On shutdown, Prism cancels queued preview work, requests worker shutdown, closes
 {"v":1,"id":7,"type":"worker.ready","payload":{"blender_version":"4.2"}}
 ```
 
-Implemented command names are `worker.hello`, `worker.shutdown`, `model.import`, `camera.frame`, `preview.render`, and `output.render`. Replies use command-specific success types or `*.error`. Error payloads contain a stable `code`, an optional preview generation, and a user-facing `message`; tracebacks remain in worker stderr.
+Implemented command names are `worker.hello`, `worker.shutdown`, `model.import`, `camera.frame`, `preview.render`, and `output.render`. Replies use command-specific success types or `*.error`. Preview and output replies include elapsed milliseconds. Error payloads contain a stable `code`, an optional preview generation, and a user-facing `message`; tracebacks remain in worker stderr.

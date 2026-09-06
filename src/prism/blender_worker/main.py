@@ -246,6 +246,7 @@ def render_image(payload: dict[str, Any], preview: bool) -> Path:
 
 
 def render_preview_frame(payload: dict[str, Any]) -> dict[str, Any]:
+    started = time.perf_counter()
     scene = bpy.context.scene
     apply_settings(payload)
     scene.render.engine = "BLENDER_EEVEE"
@@ -274,6 +275,7 @@ def render_preview_frame(payload: dict[str, Any]) -> dict[str, Any]:
         "width": width,
         "height": height,
         "stride": width * 4,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
     }
 
 
@@ -329,8 +331,16 @@ def handle(command: dict[str, Any]) -> None:
                 {**frame, "generation": payload.get("generation", 0)},
             )
         elif message_type == "output.render":
+            started = time.perf_counter()
             output_path = render_image(payload, preview=False)
-            reply(identifier, "output.rendered", {"path": str(output_path)})
+            reply(
+                identifier,
+                "output.rendered",
+                {
+                    "path": str(output_path),
+                    "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+                },
+            )
         else:
             reply(
                 identifier,
