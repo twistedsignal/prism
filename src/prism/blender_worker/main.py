@@ -153,6 +153,11 @@ def apply_settings(payload: dict[str, Any]) -> None:
     output = payload.get("output")
     if isinstance(output, dict):
         scene.render.film_transparent = bool(output.get("transparent_background", False))
+        if output.get("engine") == "cycles":
+            scene.render.engine = "CYCLES"
+            scene.cycles.samples = 64
+        else:
+            scene.render.engine = "BLENDER_EEVEE"
     lighting = payload.get("lighting")
     if isinstance(lighting, dict):
         key = bpy.data.lights.get("Prism Key")
@@ -205,6 +210,8 @@ def apply_settings(payload: dict[str, Any]) -> None:
 def render_image(payload: dict[str, Any], preview: bool) -> Path:
     scene = bpy.context.scene
     apply_settings(payload)
+    if preview:
+        scene.render.engine = "BLENDER_EEVEE"
     output = payload.get("output", {})
     if not isinstance(output, dict):
         output = {}

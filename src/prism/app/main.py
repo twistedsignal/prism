@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from prism.core.presets import PresetError, decode, encode
-from prism.core.settings import CameraSettings, RenderSettings
+from prism.core.settings import CameraSettings, RenderEngine, RenderSettings
 from prism.renderer.client import BlenderWorkerClient, WorkerState
 from prism.renderer.discovery import discover_blender
 from prism.renderer.protocol import Message
@@ -202,7 +202,7 @@ class MainWindow(QMainWindow):
         )
         self._request_idle_preview()
 
-    def _set_output(self, width: int, height: int, transparent: bool) -> None:
+    def _set_output(self, width: int, height: int, transparent: bool, engine: str) -> None:
         self._settings = replace(
             self._settings,
             output=replace(
@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
                 width=width,
                 height=height,
                 transparent_background=transparent,
+                engine=RenderEngine(engine),
             ),
         )
         self._request_idle_preview()

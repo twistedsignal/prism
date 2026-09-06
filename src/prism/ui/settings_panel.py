@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
@@ -21,7 +22,7 @@ class SettingsPanel(QScrollArea):
     material_changed = Signal(bool, float, float)
     geometry_changed = Signal(int, bool)
     cavity_changed = Signal(bool, float, float)
-    output_changed = Signal(int, int, bool)
+    output_changed = Signal(int, int, bool, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -153,22 +154,31 @@ class SettingsPanel(QScrollArea):
             control.setRange(1, 16384)
             control.setValue(1024)
         transparent = QCheckBox()
+        engine = QComboBox()
+        engine.addItem("Eevee", "eevee")
+        engine.addItem("Cycles", "cycles")
         layout.addRow("Width", width)
         layout.addRow("Height", height)
         layout.addRow("Transparent", transparent)
+        layout.addRow("Final engine", engine)
         width.valueChanged.connect(
             lambda _value: self.output_changed.emit(
-                width.value(), height.value(), transparent.isChecked()
+                width.value(), height.value(), transparent.isChecked(), str(engine.currentData())
             )
         )
         height.valueChanged.connect(
             lambda _value: self.output_changed.emit(
-                width.value(), height.value(), transparent.isChecked()
+                width.value(), height.value(), transparent.isChecked(), str(engine.currentData())
             )
         )
         transparent.toggled.connect(
             lambda _value: self.output_changed.emit(
-                width.value(), height.value(), transparent.isChecked()
+                width.value(), height.value(), transparent.isChecked(), str(engine.currentData())
+            )
+        )
+        engine.currentIndexChanged.connect(
+            lambda _value: self.output_changed.emit(
+                width.value(), height.value(), transparent.isChecked(), str(engine.currentData())
             )
         )
         return group
