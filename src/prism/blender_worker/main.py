@@ -209,6 +209,17 @@ def render_image(payload: dict[str, Any], preview: bool) -> Path:
     else:
         path = Path(str(payload["output_path"])).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
+        formats = {
+            ".png": "PNG",
+            ".jpg": "JPEG",
+            ".jpeg": "JPEG",
+            ".webp": "WEBP",
+            ".exr": "OPEN_EXR",
+        }
+        file_format = formats.get(path.suffix.lower())
+        if file_format is None:
+            raise ValueError("Prism exports PNG, JPEG, WebP, and EXR files.")
+        scene.render.image_settings.file_format = file_format
     scene.render.filepath = str(path)
     bpy.ops.render.render(write_still=True)
     return path

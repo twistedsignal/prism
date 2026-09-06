@@ -105,7 +105,10 @@ class MainWindow(QMainWindow):
 
     def _export_image(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export image", "render.png", "PNG image (*.png)"
+            self,
+            "Export image",
+            "render.png",
+            "Images (*.png *.jpg *.jpeg *.webp *.exr)",
         )
         if path:
             self._worker.send("output.render", {"output_path": path, **asdict(self._settings)})
