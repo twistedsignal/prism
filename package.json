@@ -6,9 +6,6 @@
   "description": "A local Blender model rendering workspace.",
   "license": "GPL-3.0-or-later",
   "packageManager": "pnpm@11.1.2",
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
-  },
   "scripts": {
     "dev": "node scripts/tauri-dev.mjs",
     "build": "vite build",

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 
 /*
   Luar's AppImage exposes its private GTK/WebKit libraries through the parent
@@ -16,7 +17,7 @@ if (environment.XDG_DATA_DIRS) {
     .join(":");
 }
 
-const executable = process.env.npm_execpath ? process.execPath : process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const args = process.env.npm_execpath ? [process.env.npm_execpath, "exec", "tauri", "dev"] : ["exec", "tauri", "dev"];
-const child = spawn(executable, args, { env: environment, stdio: "inherit" });
+const require = createRequire(import.meta.url);
+const tauriCli = require.resolve("@tauri-apps/cli/tauri.js");
+const child = spawn(process.execPath, [tauriCli, "dev"], { env: environment, stdio: "inherit" });
 child.on("exit", (code) => process.exit(code ?? 1));
