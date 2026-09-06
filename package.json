@@ -10,7 +10,7 @@
     "onlyBuiltDependencies": ["esbuild"]
   },
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "node scripts/tauri-dev.mjs",
     "build": "vite build",
     "package": "tauri build",
     "typecheck": "tsc --noEmit",
