@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from prism.core.model_types import validate_model_path
 from prism.core.presets import PresetError, decode, encode
-from prism.core.settings import CameraSettings, RenderEngine, RenderSettings
+from prism.core.settings import CameraSettings, Projection, RenderEngine, RenderSettings
 from prism.renderer.client import BlenderWorkerClient, WorkerState
 from prism.renderer.discovery import discover_blender
 from prism.renderer.protocol import Message
@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
         self._worker.user_error.connect(self._show_worker_error)
         self._panel = SettingsPanel()
         self._panel.camera_changed.connect(self._set_camera_values)
+        self._panel.projection_changed.connect(self._set_projection)
         self._panel.lighting_changed.connect(self._set_lighting)
         self._panel.material_changed.connect(self._set_material)
         self._panel.geometry_changed.connect(self._set_geometry)
@@ -214,6 +215,12 @@ class MainWindow(QMainWindow):
         camera = replace(
             self._settings.camera, yaw_degrees=yaw, pitch_degrees=pitch, distance=distance
         )
+        self._viewport.set_camera(camera)
+        self._set_camera(camera, False)
+
+    def _set_projection(self, orthographic: bool) -> None:
+        projection = Projection.ORTHOGRAPHIC if orthographic else Projection.PERSPECTIVE
+        camera = replace(self._settings.camera, projection=projection)
         self._viewport.set_camera(camera)
         self._set_camera(camera, False)
 

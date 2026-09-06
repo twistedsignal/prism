@@ -20,6 +20,7 @@ from prism.core.settings import RenderSettings
 
 class SettingsPanel(QScrollArea):
     camera_changed = Signal(float, float, float)
+    projection_changed = Signal(bool)
     lighting_changed = Signal(float, float, float)
     material_changed = Signal(bool, float, float)
     geometry_changed = Signal(int, bool)
@@ -43,6 +44,7 @@ class SettingsPanel(QScrollArea):
     def set_settings(self, settings: RenderSettings) -> None:
         controls = (
             *self._camera_controls,
+            self._projection_control,
             *self._lighting_controls,
             *self._material_controls,
             *self._geometry_controls,
@@ -54,6 +56,7 @@ class SettingsPanel(QScrollArea):
         yaw.setValue(settings.camera.yaw_degrees)
         pitch.setValue(settings.camera.pitch_degrees)
         distance.setValue(settings.camera.distance)
+        self._projection_control.setChecked(settings.camera.projection.value == "orthographic")
         key, fill, world = self._lighting_controls
         key.setValue(settings.lighting.key_energy)
         fill.setValue(settings.lighting.fill_energy)
@@ -97,15 +100,19 @@ class SettingsPanel(QScrollArea):
             self._number(0.01, 1000, 4),
         )
         self._camera_controls = (yaw, pitch, distance)
+        orthographic = QCheckBox()
+        self._projection_control = orthographic
         layout.addRow("Yaw", yaw)
         layout.addRow("Pitch", pitch)
         layout.addRow("Distance", distance)
+        layout.addRow("Orthographic", orthographic)
         for control in (yaw, pitch, distance):
             control.valueChanged.connect(
                 lambda _value: self.camera_changed.emit(
                     yaw.value(), pitch.value(), distance.value()
                 )
             )
+        orthographic.toggled.connect(self.projection_changed)
         return group
 
     def _lighting_group(self) -> QGroupBox:
