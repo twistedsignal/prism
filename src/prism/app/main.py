@@ -132,7 +132,21 @@ class MainWindow(QMainWindow):
             self.close()
 
     def _on_worker_message(self, message: Message) -> None:
-        if message.type == "model.imported":
+        if message.type in {"model.imported", "camera.framed"}:
+            target = message.payload.get("frame_target")
+            distance = message.payload.get("frame_distance")
+            if isinstance(target, list) and len(target) == 3 and isinstance(distance, (int, float)):
+                self._settings = replace(
+                    self._settings,
+                    camera=replace(
+                        self._settings.camera,
+                        target_x=float(target[0]),
+                        target_y=float(target[1]),
+                        target_z=float(target[2]),
+                        distance=float(distance),
+                    ),
+                )
+                self._viewport.set_camera(self._settings.camera)
             self._viewport.setText("Rendering preview…")
             self._request_idle_preview()
         elif message.type == "preview.frame":
@@ -216,9 +230,7 @@ class MainWindow(QMainWindow):
         self._request_idle_preview()
 
     def _frame_model(self) -> None:
-        self._settings = replace(self._settings, camera=RenderSettings().camera)
-        self._viewport.set_camera(self._settings.camera)
-        self._request_idle_preview()
+        self._worker.send("camera.frame", {})
 
     def _request_idle_preview(self) -> None:
         self._scheduler.request(self._settings, PreviewQuality.IDLE)

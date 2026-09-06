@@ -98,6 +98,8 @@ def prepare_scene() -> None:
     minimum, maximum = mesh_bounds()
     center = (minimum + maximum) * 0.5
     radius = max((maximum - minimum).length * 0.5, 0.1)
+    scene["prism_frame_target"] = tuple(center)
+    scene["prism_frame_distance"] = radius * 3.2
     camera_data = bpy.data.cameras.new("Prism Camera")
     camera = bpy.data.objects.new("Prism Camera", camera_data)
     scene.collection.objects.link(camera)
@@ -267,7 +269,25 @@ def handle(command: dict[str, Any]) -> None:
             clear_scene()
             import_model(model_path)
             prepare_scene()
-            reply(identifier, "model.imported", {"path": str(model_path)})
+            reply(
+                identifier,
+                "model.imported",
+                {
+                    "path": str(model_path),
+                    "frame_target": list(bpy.context.scene["prism_frame_target"]),
+                    "frame_distance": bpy.context.scene["prism_frame_distance"],
+                },
+            )
+        elif message_type == "camera.frame":
+            scene = bpy.context.scene
+            reply(
+                identifier,
+                "camera.framed",
+                {
+                    "frame_target": list(scene["prism_frame_target"]),
+                    "frame_distance": scene["prism_frame_distance"],
+                },
+            )
         elif message_type == "preview.render":
             frame = render_image(payload, preview=True)
             reply(
