@@ -1,27 +1,29 @@
 # Prism
 
-Prism is a local desktop app for importing a 3D model, styling a clean Blender Eevee render, and exporting PNG, JPEG, WebP, or EXR images.
+Prism is a GPL-3.0-or-later desktop app for turning 3D models into polished images. Its Qt interface owns the workflow. A long-lived Blender process imports models and renders previews or final images.
 
-It uses the Blender workflow in [modelrender](https://github.com/OttoHatt/modelrender) as a starting point. Prism and its Blender bridge are GPL-3.0-or-later.
+## Status
+
+This branch is a ground-up rewrite. The old Tauri application was intentionally removed in commit `e04aaa3`. Prism now imports a supported model into a persistent Blender worker, shows an Eevee preview, supports basic orbit/pan/zoom, exports images, and has offline `P1.` preset codes.
 
 ## Development
 
-Install Node 22+, pnpm, Rust, Tauri's platform prerequisites, and Blender on `PATH`.
+Prism needs Python 3.12 or newer and Blender on `PATH`. Install the project with its development tools, then run the checks:
 
 ```sh
-pnpm install
-pnpm dev
+python -m pip install -e '.[dev]'
+ruff check .
+mypy src/prism
+pytest
+python -m prism.app.main
 ```
 
-Prism copies imported models into its local project store. It invokes Blender in background mode for preview and export, so no model data is uploaded.
+Prism supports `.blend`, `.glb`, `.gltf`, `.fbx`, `.obj`, and `.stl` in its first release. Blender performs all imports so format support follows the installed Blender version.
 
-## Current scope
-
-- `.blend`, `.fbx`, `.obj`, `.glb`, `.gltf`, `.stl`, Collada, PLY, Alembic, and USD imports where the installed Blender build supports them
-- Eevee studio rendering with orbit camera, key/fill/world lights, transparent backgrounds, and a cavity control
-- Project-local model copies and settings
-- Compact `P1.` preset codes for sharing render settings
+The first settings panel controls camera position, key/fill/world lighting, material roughness and metallic, smooth shading/subdivision, detail controls, output dimensions, and transparent output. Final export recognizes PNG, JPEG, WebP, and OpenEXR based on the chosen filename extension.
 
 ## License
 
-GPL-3.0-or-later. The SPDX identifier appears in the package metadata and source headers. Full license text: https://www.gnu.org/licenses/gpl-3.0.txt.
+Prism is licensed under GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+For packaging instructions, see [docs/packaging.md](docs/packaging.md).

@@ -1,6 +1,11 @@
-node_modules/
-dist/
-src-tauri/target/
-src-tauri/gen/
+.venv/
 __pycache__/
-.DS_Store
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.spec
+!prism.spec
+*.log

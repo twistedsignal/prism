@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "prism-renderer"
+version = "0.1.0"
+description = "A focused desktop renderer for 3D models, powered by Blender."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Twisted Signal" }]
+dependencies = ["PySide6>=6.8"]
+
+[project.optional-dependencies]
+dev = ["mypy>=1.13", "pyinstaller>=6.11", "pytest>=8.3", "pytest-qt>=4.4", "ruff>=0.8"]
+
+[project.scripts]
+prism = "prism.app.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/prism"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["blender: requires a working Blender executable"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/prism"]
+exclude = ["src/prism/blender_worker"]
