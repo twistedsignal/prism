@@ -52,7 +52,7 @@ def test_preset_settings_synchronize_controls(qtbot: object) -> None:
         )
     )
     yaw, pitch, distance, roll, field_of_view = panel._camera_controls
-    width, height, _transparent, engine = panel._output_controls
+    width, height, _transparent, engine, _red, _green, _blue = panel._output_controls
     assert (yaw.value(), pitch.value(), distance.value(), roll.value(), field_of_view.value()) == (
         111,
         -20,

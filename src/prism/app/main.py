@@ -279,7 +279,16 @@ class MainWindow(QMainWindow):
         )
         self._request_idle_preview()
 
-    def _set_output(self, width: int, height: int, transparent: bool, engine: str) -> None:
+    def _set_output(
+        self,
+        width: int,
+        height: int,
+        transparent: bool,
+        engine: str,
+        red: float,
+        green: float,
+        blue: float,
+    ) -> None:
         self._settings = replace(
             self._settings,
             output=replace(
@@ -288,6 +297,7 @@ class MainWindow(QMainWindow):
                 height=height,
                 transparent_background=transparent,
                 engine=RenderEngine(engine),
+                background=Color(red, green, blue),
             ),
         )
         self._request_idle_preview()

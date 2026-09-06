@@ -174,7 +174,15 @@ def apply_settings(payload: dict[str, Any]) -> None:
             key.energy = float(lighting.get("key_energy", 1100.0))
         if fill is not None:
             fill.energy = float(lighting.get("fill_energy", 260.0))
-        scene.world.color = (float(lighting.get("world_strength", 1.0)),) * 3
+        background = output.get("background", {}) if isinstance(output, dict) else {}
+        if not isinstance(background, dict):
+            background = {}
+        world_strength = float(lighting.get("world_strength", 1.0))
+        scene.world.color = (
+            float(background.get("red", 0.055)) * world_strength,
+            float(background.get("green", 0.063)) * world_strength,
+            float(background.get("blue", 0.086)) * world_strength,
+        )
     material = payload.get("material")
     if isinstance(material, dict) and material.get("use_original") is False:
         override = bpy.data.materials.get("Prism Override") or bpy.data.materials.new(

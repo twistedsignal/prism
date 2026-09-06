@@ -25,7 +25,7 @@ class SettingsPanel(QScrollArea):
     material_changed = Signal(bool, float, float, float, float, float)
     geometry_changed = Signal(int, bool)
     cavity_changed = Signal(bool, float, float)
-    output_changed = Signal(int, int, bool, str)
+    output_changed = Signal(int, int, bool, str, float, float, float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -77,11 +77,14 @@ class SettingsPanel(QScrollArea):
         enabled.setChecked(settings.cavity.enabled)
         ridge.setValue(settings.cavity.ridge_strength)
         valley.setValue(settings.cavity.valley_strength)
-        width, height, transparent, engine = self._output_controls
+        width, height, transparent, engine, red, green, blue = self._output_controls
         width.setValue(settings.output.width)
         height.setValue(settings.output.height)
         transparent.setChecked(settings.output.transparent_background)
         engine.setCurrentIndex(0 if settings.output.engine.value == "eevee" else 1)
+        red.setValue(settings.output.background.red)
+        green.setValue(settings.output.background.green)
+        blue.setValue(settings.output.background.blue)
         for control, was_blocked in zip(controls, previous, strict=True):
             control.blockSignals(was_blocked)
 
@@ -235,29 +238,73 @@ class SettingsPanel(QScrollArea):
         engine = QComboBox()
         engine.addItem("Eevee", "eevee")
         engine.addItem("Cycles", "cycles")
-        self._output_controls = (width, height, transparent, engine)
+        red, green, blue = (
+            self._number(0, 1, 0.055),
+            self._number(0, 1, 0.063),
+            self._number(0, 1, 0.086),
+        )
+        self._output_controls = (width, height, transparent, engine, red, green, blue)
         layout.addRow("Width", width)
         layout.addRow("Height", height)
         layout.addRow("Transparent", transparent)
         layout.addRow("Final engine", engine)
+        layout.addRow("Background red", red)
+        layout.addRow("Background green", green)
+        layout.addRow("Background blue", blue)
         width.valueChanged.connect(
             lambda _value: self.output_changed.emit(
-                width.value(), height.value(), transparent.isChecked(), str(engine.currentData())
+                width.value(),
+                height.value(),
+                transparent.isChecked(),
+                str(engine.currentData()),
+                red.value(),
+                green.value(),
+                blue.value(),
             )
         )
         height.valueChanged.connect(
             lambda _value: self.output_changed.emit(
-                width.value(), height.value(), transparent.isChecked(), str(engine.currentData())
+                width.value(),
+                height.value(),
+                transparent.isChecked(),
+                str(engine.currentData()),
+                red.value(),
+                green.value(),
+                blue.value(),
             )
         )
         transparent.toggled.connect(
             lambda _value: self.output_changed.emit(
-                width.value(), height.value(), transparent.isChecked(), str(engine.currentData())
+                width.value(),
+                height.value(),
+                transparent.isChecked(),
+                str(engine.currentData()),
+                red.value(),
+                green.value(),
+                blue.value(),
             )
         )
         engine.currentIndexChanged.connect(
             lambda _value: self.output_changed.emit(
-                width.value(), height.value(), transparent.isChecked(), str(engine.currentData())
+                width.value(),
+                height.value(),
+                transparent.isChecked(),
+                str(engine.currentData()),
+                red.value(),
+                green.value(),
+                blue.value(),
             )
         )
+        for background_control in (red, green, blue):
+            background_control.valueChanged.connect(
+                lambda _value: self.output_changed.emit(
+                    width.value(),
+                    height.value(),
+                    transparent.isChecked(),
+                    str(engine.currentData()),
+                    red.value(),
+                    green.value(),
+                    blue.value(),
+                )
+            )
         return group
