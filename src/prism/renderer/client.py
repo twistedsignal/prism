@@ -35,6 +35,7 @@ class BlenderWorkerClient(QObject):
         self._worker_script = worker_script
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
+        self._process.started.connect(self._on_started)
         self._process.readyReadStandardOutput.connect(self._read_stdout)
         self._process.readyReadStandardError.connect(self._read_stderr)
         self._process.errorOccurred.connect(self._on_error)
@@ -51,6 +52,8 @@ class BlenderWorkerClient(QObject):
             return
         self._set_state(WorkerState.STARTING)
         environment = QProcessEnvironment.systemEnvironment()
+        for variable in ("LD_LIBRARY_PATH", "PYTHONHOME", "PYTHONPATH"):
+            environment.remove(variable)
         environment.insert("PYTHONUNBUFFERED", "1")
         self._process.setProcessEnvironment(environment)
         self._process.start(
@@ -64,6 +67,9 @@ class BlenderWorkerClient(QObject):
         identifier = next(self._next_id)
         self._process.write(Message(identifier, message_type, payload).to_line())
         return identifier
+
+    def _on_started(self) -> None:
+        self.send("worker.hello", {"client_version": "0.1.0"})
 
     def shutdown(self) -> None:
         if self._process.state() is QProcess.ProcessState.NotRunning:
