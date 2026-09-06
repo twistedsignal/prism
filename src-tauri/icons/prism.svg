@@ -1,8 +1,0 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" rx="112" fill="#161523"/>
-  <path d="M256 72L424 168V360L256 456L88 360V168L256 72Z" fill="url(#paint0_linear)"/>
-  <path d="M256 72V456L88 360V168L256 72Z" fill="#9A75F5" fill-opacity=".72"/>
-  <path d="M256 176L332 220V308L256 352L180 308V220L256 176Z" fill="#F7F1FF"/>
-  <path d="M256 176V352L180 308V220L256 176Z" fill="#D7C4FF"/>
-  <defs><linearGradient id="paint0_linear" x1="88" y1="72" x2="424" y2="456" gradientUnits="userSpaceOnUse"><stop stop-color="#D7C4FF"/><stop offset="1" stop-color="#6946C0"/></linearGradient></defs>
-</svg>
