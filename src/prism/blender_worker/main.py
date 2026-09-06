@@ -9,6 +9,7 @@ import threading
 import time
 import traceback
 import uuid
+from math import cos, radians, sin
 from pathlib import Path
 from typing import Any
 
@@ -118,8 +119,82 @@ def prepare_scene() -> None:
         light.rotation_euler = (center - light.location).to_track_quat("-Z", "Y").to_euler()
 
 
+def apply_settings(payload: dict[str, Any]) -> None:
+    scene = bpy.context.scene
+    camera_settings = payload.get("camera")
+    if isinstance(camera_settings, dict) and scene.camera is not None:
+        target = Vector(
+            (
+                float(camera_settings.get("target_x", 0.0)),
+                float(camera_settings.get("target_y", 0.0)),
+                float(camera_settings.get("target_z", 0.0)),
+            )
+        )
+        distance = max(float(camera_settings.get("distance", 4.0)), 0.01)
+        yaw, pitch = (
+            radians(float(camera_settings.get("yaw_degrees", 35.0))),
+            radians(float(camera_settings.get("pitch_degrees", 25.0))),
+        )
+        position = target + Vector(
+            (
+                distance * cos(pitch) * cos(yaw),
+                distance * cos(pitch) * sin(yaw),
+                distance * sin(pitch),
+            )
+        )
+        scene.camera.location = position
+        scene.camera.rotation_euler = (target - position).to_track_quat("-Z", "Y").to_euler()
+        if camera_settings.get("projection") == "orthographic":
+            scene.camera.data.type = "ORTHO"
+            scene.camera.data.ortho_scale = float(camera_settings.get("orthographic_scale", 4.0))
+        else:
+            scene.camera.data.type = "PERSP"
+            scene.camera.data.lens = 50.0
+    output = payload.get("output")
+    if isinstance(output, dict):
+        scene.render.film_transparent = bool(output.get("transparent_background", False))
+    lighting = payload.get("lighting")
+    if isinstance(lighting, dict):
+        key = bpy.data.lights.get("Prism Key")
+        fill = bpy.data.lights.get("Prism Fill")
+        if key is not None:
+            key.energy = float(lighting.get("key_energy", 1100.0))
+        if fill is not None:
+            fill.energy = float(lighting.get("fill_energy", 260.0))
+        scene.world.color = (float(lighting.get("world_strength", 1.0)),) * 3
+    material = payload.get("material")
+    if isinstance(material, dict) and material.get("use_original") is False:
+        override = bpy.data.materials.get("Prism Override") or bpy.data.materials.new(
+            "Prism Override"
+        )
+        override.diffuse_color = (0.8, 0.8, 0.8, 1.0)
+        override.metallic = float(material.get("metallic", 0.0))
+        override.roughness = float(material.get("roughness", 0.45))
+        for object in scene.objects:
+            if object.type == "MESH":
+                object.data.materials.clear()
+                object.data.materials.append(override)
+    geometry = payload.get("geometry")
+    if isinstance(geometry, dict):
+        for object in scene.objects:
+            if object.type != "MESH":
+                continue
+            for polygon in object.data.polygons:
+                polygon.use_smooth = bool(geometry.get("smooth_shading", True))
+            level = int(geometry.get("subdivision_level", 0))
+            modifier = object.modifiers.get("Prism Subdivision")
+            if level > 0:
+                if modifier is None:
+                    modifier = object.modifiers.new("Prism Subdivision", "SUBSURF")
+                modifier.levels = level
+                modifier.render_levels = level
+            elif modifier is not None:
+                object.modifiers.remove(modifier)
+
+
 def render_image(payload: dict[str, Any], preview: bool) -> Path:
     scene = bpy.context.scene
+    apply_settings(payload)
     output = payload.get("output", {})
     if not isinstance(output, dict):
         output = {}

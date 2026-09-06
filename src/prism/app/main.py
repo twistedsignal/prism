@@ -3,25 +3,28 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import asdict, replace
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QPixmap
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
+    QDockWidget,
     QFileDialog,
-    QLabel,
     QMainWindow,
     QMessageBox,
-    QSplitter,
     QToolBar,
-    QVBoxLayout,
-    QWidget,
 )
 
+from prism.core.presets import PresetError, decode, encode
+from prism.core.settings import CameraSettings, RenderSettings
 from prism.renderer.client import BlenderWorkerClient, WorkerState
 from prism.renderer.discovery import discover_blender
 from prism.renderer.protocol import Message
+from prism.renderer.scheduler import PreviewQuality, PreviewRequest, PreviewScheduler
+from prism.ui.settings_panel import SettingsPanel
+from prism.ui.viewport import ViewportWidget
 
 
 class MainWindow(QMainWindow):
@@ -29,29 +32,30 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Prism")
         self.resize(1280, 800)
-        self._viewport = QLabel("Starting Blender…")
-        self._viewport.setObjectName("viewport")
-        self._viewport.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._viewport.setMinimumSize(640, 480)
-        self._viewport.setStyleSheet("background: #171923; color: #c7cad8;")
+        self._settings = RenderSettings()
+        self._viewport = ViewportWidget()
+        self._viewport.set_camera(self._settings.camera)
+        self._viewport.camera_changed.connect(self._set_camera)
+        self._viewport.frame_requested.connect(self._frame_model)
+        self._scheduler = PreviewScheduler(self._dispatch_preview)
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.setInterval(220)
+        self._idle_timer.timeout.connect(self._request_idle_preview)
         worker_script = Path(__file__).parents[1] / "blender_worker" / "main.py"
         self._worker = BlenderWorkerClient(worker_script, self)
         self._worker.state_changed.connect(self._on_worker_state)
         self._worker.message_received.connect(self._on_worker_message)
         self._worker.user_error.connect(self._show_worker_error)
-        sidebar = QWidget()
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.addWidget(
-            QLabel(
-                "Model\n\nCamera\n\nLighting\n\nMaterial\n\nGeometry\n\nDetail / Cavity\n\nOutput"
-            )
-        )
-        sidebar_layout.addStretch(1)
-        split = QSplitter()
-        split.addWidget(self._viewport)
-        split.addWidget(sidebar)
-        split.setSizes([960, 320])
-        self.setCentralWidget(split)
+        self._panel = SettingsPanel()
+        self._panel.camera_changed.connect(self._set_camera_values)
+        self._panel.lighting_changed.connect(self._set_lighting)
+        self._panel.material_changed.connect(self._set_material)
+        self._panel.geometry_changed.connect(self._set_geometry)
+        self._panel.cavity_changed.connect(self._set_cavity)
+        self._panel.output_changed.connect(self._set_output)
+        self.setCentralWidget(self._viewport)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_for_panel())
         toolbar = QToolBar("Main", self)
         self.addToolBar(toolbar)
         import_action = QAction("Import model", self)
@@ -60,11 +64,23 @@ class MainWindow(QMainWindow):
         export_action = QAction("Export image", self)
         export_action.triggered.connect(self._export_image)
         toolbar.addAction(export_action)
+        copy_preset_action = QAction("Copy preset", self)
+        copy_preset_action.triggered.connect(self._copy_preset)
+        toolbar.addAction(copy_preset_action)
+        paste_preset_action = QAction("Paste preset", self)
+        paste_preset_action.triggered.connect(self._paste_preset)
+        toolbar.addAction(paste_preset_action)
         blender = discover_blender()
         if blender is None:
             self._viewport.setText("Blender was not found on PATH.")
         else:
             self._worker.start(blender)
+
+    def _dock_for_panel(self) -> QDockWidget:
+        dock = QDockWidget("Settings", self)
+        dock.setWidget(self._panel)
+        dock.setMinimumWidth(280)
+        return dock
 
     def closeEvent(self, event: object) -> None:
         self._worker.shutdown()
@@ -86,9 +102,19 @@ class MainWindow(QMainWindow):
             self, "Export image", "render.png", "PNG image (*.png)"
         )
         if path:
-            self._worker.send(
-                "output.render", {"output_path": path, "output": {"width": 1024, "height": 1024}}
-            )
+            self._worker.send("output.render", {"output_path": path, **asdict(self._settings)})
+
+    def _copy_preset(self) -> None:
+        QApplication.clipboard().setText(encode(self._settings))
+
+    def _paste_preset(self) -> None:
+        try:
+            self._settings = decode(QApplication.clipboard().text())
+        except PresetError as error:
+            self._show_worker_error(str(error))
+            return
+        self._viewport.set_camera(self._settings.camera)
+        self._request_idle_preview()
 
     def _on_worker_state(self, state: str) -> None:
         if state == WorkerState.READY.value:
@@ -97,16 +123,12 @@ class MainWindow(QMainWindow):
     def _on_worker_message(self, message: Message) -> None:
         if message.type == "model.imported":
             self._viewport.setText("Rendering preview…")
-            self._worker.send("preview.render", {"generation": message.identifier})
+            self._request_idle_preview()
         elif message.type == "preview.frame":
-            pixmap = QPixmap(str(message.payload["path"]))
-            self._viewport.setPixmap(
-                pixmap.scaled(
-                    self._viewport.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-            )
+            self._viewport.set_frame(str(message.payload["path"]))
+            self._scheduler.complete(int(message.payload.get("generation", -1)))
+        elif message.type == "output.rendered":
+            self.statusBar().showMessage(f"Exported {message.payload['path']}", 5_000)
         elif message.type.endswith(".error"):
             self._show_worker_error(
                 str(message.payload.get("message", "Blender could not complete that request."))
@@ -114,6 +136,91 @@ class MainWindow(QMainWindow):
 
     def _show_worker_error(self, message: str) -> None:
         QMessageBox.warning(self, "Prism", message)
+
+    def _set_camera(self, camera: CameraSettings, interacting: bool) -> None:
+        self._settings = replace(self._settings, camera=camera)
+        if interacting:
+            self._scheduler.request(self._settings, PreviewQuality.INTERACTION)
+            self._idle_timer.start()
+        else:
+            self._request_idle_preview()
+
+    def _set_camera_values(self, yaw: float, pitch: float, distance: float) -> None:
+        camera = replace(
+            self._settings.camera, yaw_degrees=yaw, pitch_degrees=pitch, distance=distance
+        )
+        self._viewport.set_camera(camera)
+        self._set_camera(camera, False)
+
+    def _set_lighting(self, key: float, fill: float, world: float) -> None:
+        self._settings = replace(
+            self._settings,
+            lighting=replace(
+                self._settings.lighting, key_energy=key, fill_energy=fill, world_strength=world
+            ),
+        )
+        self._request_idle_preview()
+
+    def _set_material(self, original: bool, roughness: float, metallic: float) -> None:
+        self._settings = replace(
+            self._settings,
+            material=replace(
+                self._settings.material,
+                use_original=original,
+                roughness=roughness,
+                metallic=metallic,
+            ),
+        )
+        self._request_idle_preview()
+
+    def _set_geometry(self, subdivision: int, smooth: bool) -> None:
+        self._settings = replace(
+            self._settings,
+            geometry=replace(
+                self._settings.geometry, subdivision_level=subdivision, smooth_shading=smooth
+            ),
+        )
+        self._request_idle_preview()
+
+    def _set_cavity(self, enabled: bool, ridge: float, valley: float) -> None:
+        self._settings = replace(
+            self._settings,
+            cavity=replace(
+                self._settings.cavity, enabled=enabled, ridge_strength=ridge, valley_strength=valley
+            ),
+        )
+        self._request_idle_preview()
+
+    def _set_output(self, width: int, height: int, transparent: bool) -> None:
+        self._settings = replace(
+            self._settings,
+            output=replace(
+                self._settings.output,
+                width=width,
+                height=height,
+                transparent_background=transparent,
+            ),
+        )
+        self._request_idle_preview()
+
+    def _frame_model(self) -> None:
+        self._settings = replace(self._settings, camera=RenderSettings().camera)
+        self._viewport.set_camera(self._settings.camera)
+        self._request_idle_preview()
+
+    def _request_idle_preview(self) -> None:
+        self._scheduler.request(self._settings, PreviewQuality.IDLE)
+
+    def _dispatch_preview(self, request: PreviewRequest) -> None:
+        size = (
+            384
+            if request.quality is PreviewQuality.INTERACTION
+            else max(request.settings.output.width, request.settings.output.height)
+        )
+        payload = asdict(request.settings)
+        payload["output"] = {**payload["output"], "width": size, "height": size}
+        payload["generation"] = request.generation
+        self._worker.send("preview.render", payload)
 
 
 def main() -> int:
