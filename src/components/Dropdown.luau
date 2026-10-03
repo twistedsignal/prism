@@ -10,7 +10,8 @@ const MAX_LIST_HEIGHT = 220
 const SEARCH_THRESHOLD = 12
 const SEARCH_HEIGHT = 28
 
-export type Option = { label: string, value: any }
+-- font previews the option in its own typeface, such as a font picker's entries.
+export type Option = { label: string, value: any, font: Font? }
 
 export type Props = {
 	text: () -> string,
@@ -21,21 +22,30 @@ export type Props = {
 	anchorPoint: Vector2?,
 	layoutOrder: number?,
 	emptyText: string?,
+	-- typeface for the button's text, such as the selected font.
+	font: (() -> Font?)?,
 }
+
+const DEFAULT_FONT = Font.fromEnum(Enum.Font.SourceSans)
 
 const function openList(button: GuiObject, options: { Option }, onSelect: (any) -> (), emptyText: string?)
 	const layer = Overlay.layer()
-	const position = Overlay.toLocal(button.AbsolutePosition)
+	const opened = Overlay.toLocal(button.AbsolutePosition)
 	const count = math.max(#options, 1)
 	const searchable = #options > SEARCH_THRESHOLD
 	const listHeight = math.min(count * Theme.DROPDOWN_ROW_HEIGHT, MAX_LIST_HEIGHT)
 	const height = listHeight + if searchable then SEARCH_HEIGHT + 4 else 0
-	const below = position.Y + button.AbsoluteSize.Y + height <= layer.AbsoluteSize.Y - 4
-	const y = if below then position.Y + button.AbsoluteSize.Y + 2 else position.Y - height - 2
+	const below = opened.Y + button.AbsoluteSize.Y + height <= layer.AbsoluteSize.Y - 4
 	const width = math.max(button.AbsoluteSize.X, 140)
 	const query = vide.source("")
 
 	Overlay.mount(function(close)
+		-- follow the button while the page scrolls, instead of floating in place.
+		const anchor = Overlay.anchor(button, close)
+		const function top(): number
+			const position = anchor()
+			return if below then position.Y + button.AbsoluteSize.Y + 2 else position.Y - height - 2
+		end
 		const rows = {}
 		for index, option in options do
 			const label = string.lower(option.label)
@@ -53,7 +63,7 @@ const function openList(button: GuiObject, options: { Option }, onSelect: (any) 
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextTruncate = Enum.TextTruncate.AtEnd,
 				TextColor3 = Theme.TEXT,
-				Font = Enum.Font.SourceSans,
+				FontFace = option.font or DEFAULT_FONT,
 				TextSize = 15,
 				AutoButtonColor = true,
 				ZIndex = Theme.OVERLAY_Z + 1,
@@ -87,7 +97,9 @@ const function openList(button: GuiObject, options: { Option }, onSelect: (any) 
 				then new("TextBox")({
 					Name = "Search",
 					Size = UDim2.fromOffset(width, SEARCH_HEIGHT),
-					Position = UDim2.fromOffset(position.X, y),
+					Position = function()
+						return UDim2.fromOffset(anchor().X, top())
+					end,
 					BackgroundColor3 = Theme.INPUT,
 					BorderSizePixel = 0,
 					ClearTextOnFocus = false,
@@ -113,7 +125,9 @@ const function openList(button: GuiObject, options: { Option }, onSelect: (any) 
 			new("ScrollingFrame")({
 				Name = "List",
 				Size = UDim2.fromOffset(width, listHeight),
-				Position = UDim2.fromOffset(position.X, y + if searchable then SEARCH_HEIGHT + 4 else 0),
+				Position = function()
+					return UDim2.fromOffset(anchor().X, top() + if searchable then SEARCH_HEIGHT + 4 else 0)
+				end,
 				BackgroundColor3 = Theme.DARKER,
 				BorderSizePixel = 0,
 				ScrollBarThickness = 6,
@@ -156,7 +170,9 @@ const function Dropdown(props: Props): TextButton
 			Text = props.text,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
-			Font = Enum.Font.SourceSans,
+			FontFace = function()
+				return if props.font then props.font() or DEFAULT_FONT else DEFAULT_FONT
+			end,
 			TextSize = 15,
 			TextColor3 = Theme.TEXT,
 		}),

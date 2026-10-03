@@ -36,7 +36,9 @@ class FontTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)
-        (root / "roblox").mkdir()
+        (root / "roblox" / "families").mkdir(parents=True)
+        (root / "roblox" / "families" / "FredokaOne.json").write_text('{"name": "Fredoka One", "faces": []}')
+        (root / "roblox" / "families" / "Broken.json").write_text("not json")
         (root / "system").mkdir()
         (root / "roblox" / "Fredoka.ttf").write_bytes(font_file("Fredoka One", "Regular", 400))
         (root / "system" / "Sans-Regular.ttf").write_bytes(font_file("Test Sans", "Regular", 400))
@@ -61,6 +63,11 @@ class FontTests(unittest.TestCase):
     def test_listing_puts_roblox_fonts_first_and_skips_hidden_or_broken_files(self):
         self.assertEqual([entry["label"] for entry in fonts.listing()], ["Fredoka One", "Test Sans"])
         self.assertEqual(fonts.listing()[0]["source"], "roblox")
+
+    def test_listing_links_roblox_font_families_for_previews(self):
+        options = {entry["label"]: entry for entry in fonts.listing()}
+        self.assertEqual(options["Fredoka One"]["robloxFont"], "rbxasset://fonts/families/FredokaOne.json")
+        self.assertNotIn("robloxFont", options["Test Sans"])
 
     def test_resolve_picks_the_closest_face(self):
         self.assertTrue(fonts.resolve("Test Sans", 800, False)[0].endswith("Sans-Bold.ttf"))

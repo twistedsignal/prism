@@ -120,6 +120,11 @@ const function open(props: Props)
 	const y = if below then anchor.Y + props.anchor.AbsoluteSize.Y + 4 else math.max(4, anchor.Y - height - 4)
 
 	Overlay.mount(function(close)
+		-- follow the swatch while the page scrolls; close once it scrolls away.
+		const follow = Overlay.anchor(props.anchor, function()
+			remember(toHex(color()))
+			close()
+		end)
 		local square: Frame
 		local hueBar: Frame
 
@@ -195,7 +200,10 @@ const function open(props: Props)
 			new("Frame")({
 				Name = "ColorPicker",
 				Size = UDim2.fromOffset(WIDTH, height),
-				Position = UDim2.fromOffset(x, y),
+				Position = function()
+					const moved = follow() - anchor
+					return UDim2.fromOffset(x + moved.X, y + moved.Y)
+				end,
 				BackgroundColor3 = Theme.DARK,
 				BorderSizePixel = 0,
 				Active = true,

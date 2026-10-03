@@ -7,7 +7,8 @@ export type Status = {
 
 export type SettingType = "number" | "bool" | "color" | "rgba" | "text" | "select"
 
-export type SelectOption = { value: string, label: string }
+-- robloxFont: a Roblox font family for previewing a font option in its own typeface.
+export type SelectOption = { value: string, label: string, robloxFont: string? }
 
 export type SettingSchema = {
 	key: string,

@@ -47,6 +47,33 @@ function Overlay.mount(component: (close: () -> ()) -> GuiObject): () -> ()
 	return close
 end
 
+-- keeps a popup attached to the control that opened it. returns the control's overlay-space
+-- position, which updates as it moves (for example when its list scrolls), and closes the
+-- popup once the control scrolls out of view or is removed. call inside Overlay.mount.
+function Overlay.anchor(target: GuiObject, close: () -> ()): () -> Vector2
+	const position = vide.source(Overlay.toLocal(target.AbsolutePosition))
+	const scroller = target:FindFirstAncestorWhichIsA("ScrollingFrame")
+	const function update()
+		if scroller then
+			const top = scroller.AbsolutePosition.Y
+			const bottom = top + scroller.AbsoluteSize.Y
+			const y = target.AbsolutePosition.Y
+			if y + target.AbsoluteSize.Y <= top or y >= bottom then
+				close()
+				return
+			end
+		end
+		position(Overlay.toLocal(target.AbsolutePosition))
+	end
+	vide.cleanup(target:GetPropertyChangedSignal("AbsolutePosition"):Connect(update))
+	vide.cleanup(target.AncestryChanged:Connect(function()
+		if target.Parent == nil then
+			close()
+		end
+	end))
+	return position
+end
+
 -- full-size click catcher behind a popup; clicking it closes the popup.
 function Overlay.dismissLayer(onDismiss: () -> (), dim: boolean?): TextButton
 	return new("TextButton")({

@@ -4,6 +4,7 @@ Reads the family, weight and italic flags straight from TTF/OTF tables, so the s
 can list fonts without Blender or extra packages.
 """
 
+import json
 import os
 import struct
 import sys
@@ -161,11 +162,36 @@ def families(force=False):
         return _cache["families"]
 
 
+def roblox_families():
+    """{family name: "rbxasset://fonts/families/<file>.json"} for Studio's font families."""
+    found = {}
+    for directory in roblox_font_dirs():
+        for path in sorted((directory / "families").glob("*.json")):
+            try:
+                name = json.loads(path.read_text(encoding="utf-8")).get("name")
+            except (OSError, ValueError, AttributeError):
+                continue
+            if isinstance(name, str) and name:
+                found.setdefault(name, f"rbxasset://fonts/families/{path.name}")
+    return found
+
+
 def listing():
-    """Font options for the plugin: Roblox Studio fonts first, then system fonts."""
+    """Font options for the plugin: Roblox Studio fonts first, then system fonts.
+
+    robloxFont is the Roblox font family for the same typeface, so the plugin can
+    preview each option in its own font.
+    """
     entries = families()
+    roblox = roblox_families()
     ordered = sorted(entries, key=lambda name: (entries[name]["source"] != "roblox", name.lower()))
-    return [{"value": name, "label": name, "source": entries[name]["source"]} for name in ordered]
+    result = []
+    for name in ordered:
+        option = {"value": name, "label": name, "source": entries[name]["source"]}
+        if name in roblox:
+            option["robloxFont"] = roblox[name]
+        result.append(option)
+    return result
 
 
 def resolve(family, weight=400, italic=False):

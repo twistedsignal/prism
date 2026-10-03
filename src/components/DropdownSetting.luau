@@ -9,6 +9,7 @@ export type Props = {
 	text: () -> string,
 	options: () -> { Dropdown.Option },
 	onSelect: (any) -> (),
+	font: (() -> Font?)?,
 }
 
 const function DropdownSetting(props: Props): Frame
@@ -21,6 +22,7 @@ const function DropdownSetting(props: Props): Frame
 		text = props.text,
 		options = props.options,
 		onSelect = props.onSelect,
+		font = props.font,
 		size = UDim2.new(0.5, -6, 1, -6),
 		position = UDim2.new(0.5, 3, 0, 3),
 	})

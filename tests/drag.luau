@@ -13,6 +13,12 @@ local vide = {
         end
     end,
     cleanup = function(item) table.insert(scope, item) end,
+    source = function(value)
+        return function(...)
+            if select('#', ...) > 0 then value = ... end
+            return value
+        end
+    end,
     root = function(callback)
         local cleanups = {}
         scope = cleanups
@@ -41,7 +47,10 @@ local overlay = luau.load(fs.readFile('src/Overlay.luau'):gsub('%f[%w]const%f[%W
         Vector2 = { new = function(x, y) return { X = x, Y = y } end },
     },
 })()
-overlay.setLayer({})
+local function point(x, y)
+    return setmetatable({ X = x, Y = y }, { __sub = function(a, b) return point(a.X - b.X, a.Y - b.Y) end })
+end
+overlay.setLayer({ AbsolutePosition = point(0, 0) })
 
 local function press(state)
     local input = { UserInputState = state or 'Begin' }
@@ -89,3 +98,39 @@ scopes[#scopes]()
 assert(not input:connected())
 disposed.InputChanged(movement)
 print('Drag release checks passed')
+
+-- Popups follow the control that opened them, and close once it scrolls out of view.
+local scroller = { AbsolutePosition = point(0, 100), AbsoluteSize = point(200, 300) }
+local listeners = {}
+local target = {
+    AbsolutePosition = point(10, 150), AbsoluteSize = point(100, 28), Parent = scroller,
+    FindFirstAncestorWhichIsA = function(_, class) return if class == 'ScrollingFrame' then scroller else nil end,
+    GetPropertyChangedSignal = function(_, property)
+        return { Connect = function(_, callback)
+            listeners[property] = callback
+            return { Disconnect = function() listeners[property] = nil end }
+        end }
+    end,
+    AncestryChanged = { Connect = function(_, callback)
+        listeners.Ancestry = callback
+        return { Disconnect = function() listeners.Ancestry = nil end }
+    end },
+}
+local closed = 0
+local anchor
+local release = vide.root(function()
+    anchor = overlay.anchor(target, function() closed += 1 end)
+end)
+assert(anchor().Y == 150)
+target.AbsolutePosition = point(10, 120)
+listeners.AbsolutePosition()
+assert(anchor().Y == 120 and closed == 0, 'Popups must follow their control while scrolling')
+target.AbsolutePosition = point(10, 60)
+listeners.AbsolutePosition()
+assert(closed == 1, 'Popups must close once their control scrolls out of view')
+target.Parent = nil
+listeners.Ancestry()
+assert(closed == 2, 'Popups must close when their control is removed')
+release()
+assert(listeners.AbsolutePosition == nil, 'Closing a popup must stop following its control')
+print('Popup anchoring checks passed')

@@ -315,11 +315,19 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 				end,
 			})
 		elseif setting.type == "select" then
-			const options = function(): { Types.SelectOption }
-				const list = table.clone(setting.options or {})
+			const options = function(): { Dropdown.Option }
+				const list: { Dropdown.Option } = {}
+				for _, option in setting.options or {} do
+					table.insert(list, { value = option.value, label = option.label })
+				end
 				if setting.optionsSource == "fonts" then
 					for _, font in store.fonts() do
-						table.insert(list, { value = font.value, label = font.label })
+						-- preview fonts Roblox also has in their own typeface.
+						table.insert(list, {
+							value = font.value,
+							label = font.label,
+							font = if font.robloxFont then Font.new(font.robloxFont) else nil,
+						})
 					end
 				end
 				return list
@@ -339,6 +347,15 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 					return if current == "" then "Default" else `{current} (missing)`
 				end,
 				options = options,
+				font = function(): Font?
+					const current = settings()[key]
+					for _, option in options() do
+						if option.value == current then
+							return option.font
+						end
+					end
+					return nil
+				end,
 				onSelect = function(value)
 					store.setValue(key, value)
 				end,

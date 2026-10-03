@@ -55,7 +55,7 @@ Every effect runs on the finished render, so tweaking one never waits on Blender
 - **Stylize:** halftone, ordered dither, pixelate (nearest-neighbor), chromatic aberration, CRT and bloom.
 - **Depth:** X-ray, depth tint and depth outlines between overlapping parts.
 - **Vignette:** color, strength and opacity at the image border.
-- **Text:** centered over the render and drawn above every other effect, including the color overlay. Pick the font, size, weight, bold, italic, rotation, letter and line spacing, an RGBA fill with an optional gradient, underline, strikethrough, an outline, a glow and a drop shadow. Make the fill transparent for outline-only text. Type `\n` for a new line. The font list shows Roblox Studio's fonts first, then your system fonts. Prism uses a font's own bold and italic faces when it has them, and synthesizes the rest.
+- **Text:** centered over the render and drawn above every other effect, including the color overlay. Pick the font, size, weight, bold, italic, rotation, letter and line spacing, an RGBA fill with an optional gradient, underline, strikethrough, an outline, a glow and a drop shadow. Make the fill transparent for outline-only text. Type `\n` for a new line. The font list shows Roblox Studio's fonts first, then your system fonts; fonts Roblox also has are previewed in their own typeface. Prism uses a font's own bold and italic faces when it has them, and synthesizes the rest.
 
 Presets are saved on your computer, so they work in every game. The **Settings** tab holds the output folder, file names, render sizes, quality, the default upload creator and the backend port. Changing the port restarts the backend on the new port.
 
