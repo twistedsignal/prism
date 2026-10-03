@@ -63,7 +63,7 @@ function Overlay.dismissLayer(onDismiss: () -> (), dim: boolean?): TextButton
 end
 
 -- tracks the mouse until the button is released, even outside the dragged control.
-function Overlay.drag(onMove: (position: Vector2) -> (), onEnd: (() -> ())?)
+function Overlay.drag(press: InputObject, onMove: (position: Vector2) -> (), onEnd: (() -> ())?)
 	local done = false
 	local close: () -> () = function() end
 	const function finish()
@@ -76,7 +76,18 @@ function Overlay.drag(onMove: (position: Vector2) -> (), onEnd: (() -> ())?)
 			onEnd()
 		end
 	end
+	const function checkRelease()
+		if press.UserInputState == Enum.UserInputState.End or press.UserInputState == Enum.UserInputState.Cancel then
+			finish()
+		end
+	end
 	close = Overlay.mount(function()
+		-- The capture appears after mouse-down, so it may never receive that press's InputEnded.
+		-- Watch the original input instead, including releases outside the dragged control.
+		vide.cleanup(press:GetPropertyChangedSignal("UserInputState"):Connect(checkRelease))
+		vide.cleanup(function()
+			done = true
+		end)
 		return new("TextButton")({
 			Name = "DragCapture",
 			Size = UDim2.fromScale(1, 1),
@@ -85,7 +96,7 @@ function Overlay.drag(onMove: (position: Vector2) -> (), onEnd: (() -> ())?)
 			AutoButtonColor = false,
 			ZIndex = 1000,
 			InputChanged = function(input: InputObject)
-				if input.UserInputType == Enum.UserInputType.MouseMovement then
+				if not done and input.UserInputType == Enum.UserInputType.MouseMovement then
 					onMove(Vector2.new(input.Position.X, input.Position.Y))
 				end
 			end,
@@ -97,6 +108,7 @@ function Overlay.drag(onMove: (position: Vector2) -> (), onEnd: (() -> ())?)
 			MouseLeave = finish,
 		}) :: TextButton
 	end)
+	checkRelease()
 end
 
 return Overlay

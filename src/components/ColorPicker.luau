@@ -201,7 +201,7 @@ const function open(props: Props)
 					InputBegan = function(event: InputObject)
 						if event.UserInputType == Enum.UserInputType.MouseButton1 then
 							pickSquare(Vector2.new(event.Position.X, event.Position.Y))
-							Overlay.drag(pickSquare)
+							Overlay.drag(event, pickSquare)
 						end
 					end,
 
@@ -262,7 +262,7 @@ const function open(props: Props)
 					InputBegan = function(event: InputObject)
 						if event.UserInputType == Enum.UserInputType.MouseButton1 then
 							pickHue(Vector2.new(event.Position.X, event.Position.Y))
-							Overlay.drag(pickHue)
+							Overlay.drag(event, pickHue)
 						end
 					end,
 

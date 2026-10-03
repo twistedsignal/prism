@@ -86,7 +86,7 @@ const function SliderSetting(props: Props): Frame
 				return
 			end
 			setFromPosition(input.Position.X)
-			Overlay.drag(function(position)
+			Overlay.drag(input, function(position)
 				setFromPosition(position.X)
 			end)
 		end,
