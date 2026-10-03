@@ -8,3 +8,5 @@ the Head-to-FileMesh conversion in
 [ToMeshPart.lua](https://gist.github.com/MaximumADHD/831bc3ab4b4f8cad3c174fcb7d99884b).
 The backend keeps the mesh's original origin. Mesh offsets are applied through the
 serialized part transform.
+
+These files belong to Roblox Corporation and are not covered by Prism's MIT license.
