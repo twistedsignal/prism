@@ -10,6 +10,8 @@ from mathutils import Matrix, Quaternion, Vector
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import schema  # noqa: E402
+from effects import EFFECT_KEYS, cavity_angle_mask, post_process_pixels  # noqa: E402
+from render_cache import RenderCache  # noqa: E402
 
 
 # ============================================================
@@ -729,7 +731,9 @@ def configure_workbench(settings, studio_lights, size, aa):
     # CAVITY
     # ========================================================
 
-    shading.show_cavity = settings["cavity"]
+    shading.show_cavity = settings["cavity"] and any(settings[name] > 0 for name in (
+        "worldRidge", "worldValley", "screenRidge", "screenValley",
+    ))
     shading.cavity_type = "BOTH"
 
     shading.curvature_ridge_factor = settings["screenRidge"]
@@ -837,126 +841,6 @@ def print_scene_info(objects):
 # ============================================================
 # POST PROCESSING
 # ============================================================
-
-def shift_mask(mask, dx, dy):
-    """Translate an alpha mask without wrapping pixels at image edges."""
-    height, width = mask.shape
-    shifted = np.zeros_like(mask)
-    if abs(dx) >= width or abs(dy) >= height:
-        return shifted
-    source_x, source_y = max(0, -dx), max(0, -dy)
-    target_x, target_y = max(0, dx), max(0, dy)
-    copy_width, copy_height = width - abs(dx), height - abs(dy)
-    shifted[target_y:target_y + copy_height, target_x:target_x + copy_width] = (
-        mask[source_y:source_y + copy_height, source_x:source_x + copy_width]
-    )
-    return shifted
-
-
-def dilate_mask(mask, radius):
-    """Expand a silhouette with a circular kernel, preserving soft edges."""
-    expanded = mask.copy()
-    for dy in range(-radius, radius + 1):
-        for dx in range(-radius, radius + 1):
-            if dx * dx + dy * dy <= radius * radius:
-                np.maximum(expanded, shift_mask(mask, dx, dy), out=expanded)
-    return expanded
-
-
-def blur_mask(mask, sigma):
-    """Apply a separable Gaussian blur with transparent pixels outside the image."""
-    if sigma <= 0:
-        return mask.copy()
-    radius = int(np.ceil(3 * sigma))
-    offsets = np.arange(-radius, radius + 1, dtype=np.float32)
-    kernel = np.exp(-0.5 * (offsets / sigma) ** 2)
-    kernel /= kernel.sum()
-    blurred = mask
-    for axis in (0, 1):
-        padding = [(0, 0), (0, 0)]
-        padding[axis] = (radius, radius)
-        padded = np.pad(blurred, padding)
-        # Sum shifted copies: much faster than apply_along_axis for small kernels.
-        result = np.zeros_like(blurred)
-        length = blurred.shape[axis]
-        for index, weight in enumerate(kernel):
-            window = [slice(None), slice(None)]
-            window[axis] = slice(index, index + length)
-            result += weight * padded[tuple(window)]
-        blurred = result
-    return blurred
-
-
-def post_process_pixels(pixels, settings, size):
-    """Adjust straight-alpha RGBA and composite the image over glow/shadow/outline."""
-    scale = size / REFERENCE_RESOLUTION
-    rgb = pixels[..., :3].copy()
-    alpha = np.clip(pixels[..., 3], 0.0, 1.0)
-    saturation = settings["saturation"]
-    if saturation != 1.0:
-        gray = np.sum(rgb * (0.2126, 0.7152, 0.0722), axis=-1, keepdims=True)
-        rgb = gray + saturation * (rgb - gray)
-    if settings["contrast"] != 1.0:
-        rgb = (rgb - 0.5) * settings["contrast"] + 0.5
-    rgb = np.clip(rgb * settings["brightness"], 0.0, 1.0)
-
-    outline_width = int(round(settings["outlineSize"] * scale))
-    outline_color = schema.hex_to_rgb(settings["outlineColor"])
-    silhouette = alpha
-    if outline_width:
-        silhouette = dilate_mask(alpha, outline_width)
-
-    # Accumulate premultiplied layers from back to front, then return straight RGB.
-    output_alpha = np.zeros_like(alpha)
-    output_rgb = np.zeros_like(rgb)
-
-    def composite(layer_rgb, layer_alpha):
-        nonlocal output_rgb, output_alpha
-        output_rgb = layer_rgb * layer_alpha[..., None] + output_rgb * (1 - layer_alpha[..., None])
-        output_alpha = layer_alpha + output_alpha * (1 - layer_alpha)
-
-    if settings["glow"] and settings["glowOpacity"] > 0 and settings["glowSize"] > 0:
-        glow_size = settings["glowSize"] * scale
-        glow = dilate_mask(silhouette, max(1, int(round(glow_size * 0.35))))
-        glow = np.clip(blur_mask(glow, glow_size * 0.5) * 1.6, 0.0, 1.0)
-        composite(np.asarray(schema.hex_to_rgb(settings["glowColor"])), glow * settings["glowOpacity"])
-    if settings["dropShadow"] and settings["shadowOpacity"] > 0:
-        dx = int(round(settings["shadowOffsetX"] * scale))
-        dy = int(round(settings["shadowOffsetY"] * scale))
-        # Blender pixel rows run from bottom to top.
-        shadow = shift_mask(blur_mask(silhouette, settings["shadowBlur"] * scale), dx, -dy)
-        composite(np.asarray(schema.hex_to_rgb(settings["shadowColor"])), shadow * settings["shadowOpacity"])
-    if outline_width:
-        composite(np.asarray(outline_color), silhouette)
-    composite(rgb, alpha)
-
-    result = np.zeros_like(pixels)
-    np.divide(output_rgb, output_alpha[..., None], out=result[..., :3],
-              where=output_alpha[..., None] > 0)
-    result[..., 3] = output_alpha
-    return result
-
-
-def cavity_angle_mask(normal_pixels, minimum_angle):
-    """Select visible normal discontinuities, excluding background silhouettes."""
-    normals = normal_pixels[..., :3] * 2.0 - 1.0
-    lengths = np.linalg.norm(normals, axis=-1, keepdims=True)
-    np.divide(normals, lengths, out=normals, where=lengths > 1e-6)
-    valid = (normal_pixels[..., 3] > 0.999) & (lengths[..., 0] > 0.5)
-    mask = np.zeros(valid.shape, dtype=np.float32)
-    cosine = math.cos(math.radians(minimum_angle))
-    # Workbench curvature samples a small neighborhood around each pixel.
-    for dy, dx in ((0, 1), (1, 0), (0, 2), (2, 0)):
-        height, width = valid.shape
-        first = (slice(0, height - dy), slice(0, width - dx))
-        second = (slice(dy, height), slice(dx, width))
-        dot = np.sum(normals[first] * normals[second], axis=-1)
-        selected = valid[first] & valid[second] & (dot <= cosine)
-        np.maximum(mask[first], selected, out=mask[first])
-        np.maximum(mask[second], selected, out=mask[second])
-    # Cover the narrow highlight/shadow band on both sides of the crease.
-    return dilate_mask(mask, 2)
-
 
 def load_png_pixels(path):
     """Read straight-alpha display-space pixels without retaining an image."""
@@ -1069,42 +953,47 @@ def render_surface_normals(path, objects):
 # RENDER
 # ============================================================
 
-def render_pixels(directory, objects, minimum_angle):
+def render_pixels(directory, objects, minimum_angle, cache=None, key=None, normal_key=None):
     """Render the configured scene and return display-space RGBA, bottom row first."""
     scene = bpy.context.scene
     shading = scene.display.shading
     directory = Path(directory)
-    output_path = directory / "render.png"
-    scene.render.filepath = str(output_path)
+    show_cavity = shading.show_cavity
+    compression = scene.render.image_settings.compression
 
-    if 0 < minimum_angle < 180 and shading.show_cavity:
-        base_path = directory / "base.png"
-        normal_path = directory / "normals.png"
-        try:
-            shading.show_cavity = False
-            scene.render.filepath = str(base_path)
-            bpy.ops.render.render(write_still=True)
-        finally:
-            shading.show_cavity = True
-            scene.render.filepath = str(output_path)
-        base_pixels = load_png_pixels(base_path)
-        render_surface_normals(normal_path, objects)
-        mask = cavity_angle_mask(load_png_pixels(normal_path), minimum_angle)
-        bpy.ops.render.render(write_still=True)
-        pixels = load_png_pixels(output_path)
-        pixels[..., :3] = base_pixels[..., :3] + mask[..., None] * (
-            pixels[..., :3] - base_pixels[..., :3]
-        )
+    def capture(name, cache_key, normals=False, cavity=False):
+        pixels = cache.get(cache_key) if cache is not None else None
+        if pixels is None:
+            path = directory / f"{name}.png"
+            if normals:
+                render_surface_normals(path, objects)
+            else:
+                shading.show_cavity = cavity
+                scene.render.filepath = str(path)
+                bpy.ops.render.render(write_still=True)
+            pixels = load_png_pixels(path)
+            if cache is not None:
+                cache.put(cache_key, pixels)
         return pixels
 
-    show_cavity = shading.show_cavity
     try:
-        if minimum_angle >= 180:
-            shading.show_cavity = False
-        bpy.ops.render.render(write_still=True)
+        # These files are transient. Compression spends CPU to save disk space
+        # only to immediately decode the same pixels again.
+        scene.render.image_settings.compression = 0
+        if not show_cavity or minimum_angle >= 180:
+            return capture("base", ("base", normal_key))
+        full = capture("cavity", ("cavity", key), cavity=True)
+        if minimum_angle <= 0:
+            return full
+        base = capture("base", ("base", normal_key))
+        normals = capture("normals", ("normals", normal_key), normals=True)
+        mask = cavity_angle_mask(normals, minimum_angle)
+        pixels = full.copy()
+        pixels[..., :3] = base[..., :3] + mask[..., None] * (full[..., :3] - base[..., :3])
+        return pixels
     finally:
         shading.show_cavity = show_cavity
-    return load_png_pixels(output_path)
+        scene.render.image_settings.compression = compression
 
 
 class Renderer:
@@ -1120,6 +1009,9 @@ class Renderer:
         self.models = {}
         self.studio_lights = StudioLights()
         self.directory = tempfile.TemporaryDirectory(prefix="renderer-")
+        self.passes = RenderCache(max_bytes=64 * 1024 * 1024)
+        self.base_renders = RenderCache(max_bytes=32 * 1024 * 1024)
+        self.effect_masks = RenderCache(max_bytes=16 * 1024 * 1024)
 
     def load(self, input_path):
         """Import an OBJ once; returns its key for render()."""
@@ -1177,6 +1069,11 @@ class Renderer:
         if model is None:
             raise RuntimeError("Model is not loaded.")
         settings = schema.normalize(settings)
+        geometry_settings = {name: value for name, value in settings.items() if name not in EFFECT_KEYS}
+        cache_key = (key, json.dumps(geometry_settings, sort_keys=True), size, aa)
+        pixels = self.base_renders.get(cache_key)
+        if pixels is not None:
+            return post_process_pixels(pixels, settings, size, self.effect_masks, cache_key)
         for other in self.models.values():
             other["collection"].hide_render = other is not model
 
@@ -1187,8 +1084,14 @@ class Renderer:
         configure_camera(center, bounds, settings)
         configure_workbench(settings, self.studio_lights, size, aa)
 
-        pixels = render_pixels(self.directory.name, model["objects"], settings["minAngle"])
-        return post_process_pixels(pixels, settings, size)
+        cavity_keys = {"cavity", "minAngle", "worldRidge", "worldValley", "screenRidge", "screenValley"}
+        base_settings = {name: value for name, value in geometry_settings.items() if name not in cavity_keys}
+        base_key = (key, json.dumps(base_settings, sort_keys=True), size, aa)
+        full_settings = {name: value for name, value in geometry_settings.items() if name != "minAngle"}
+        full_key = (key, json.dumps(full_settings, sort_keys=True), size, aa)
+        pixels = render_pixels(self.directory.name, model["objects"], settings["minAngle"], self.passes, full_key, base_key)
+        self.base_renders.put(cache_key, pixels)
+        return post_process_pixels(pixels, settings, size, self.effect_masks, cache_key)
 
 
 def to_rgba8_top_down(pixels):

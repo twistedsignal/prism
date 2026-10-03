@@ -231,6 +231,14 @@ class RuntimeTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("PRISM_TEST_BLENDER"), "Set PRISM_TEST_BLENDER to run Blender integration")
 class BlenderWorkerTests(unittest.TestCase):
+    def test_real_blender_pass_cache(self):
+        result = subprocess.run([
+            os.environ["PRISM_TEST_BLENDER"], "--background", "--factory-startup",
+            "--python-exit-code", "1", "--python", str(ROOT / "tests" / "fixtures" / "blender_pass_cache.py"),
+        ], capture_output=True, text=True, timeout=180)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Blender pass-cache checks passed", result.stdout)
+
     def test_real_scene_render_export_idle_restart_and_recovery(self):
         with tempfile.TemporaryDirectory() as temporary:
             worker = worker_client.Worker(command=[

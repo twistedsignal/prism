@@ -76,6 +76,12 @@ Edit your existing personal API key in the Creator Dashboard and add **Legacy As
 
 Completed renders use a 64 MB memory cache in the Blender worker, shared by previews, exports and uploads. Changing a model, camera, render settings, output size or antialiasing selects a different cache entry. Worker shutdown releases this cache and imported models; prepared scenes remain on disk for the next worker.
 
+Auto-3d is enabled by default in the plugin's Settings tab. It hides the 3D/Blender picker, shows the Studio viewport immediately when you edit the camera or model settings, and switches to the matching Blender preview when rendering finishes. Turn it off to choose either view manually. The preference is saved per Studio user.
+
+Image effects reuse the rendered image, so saturation, contrast, brightness, outline, shadow and glow edits skip Blender entirely. Silhouettes and blurred masks are reused when only colors, opacity or shadow offsets change. Cavity angle changes reuse the color, base and normals passes; turning cavity off reuses the base pass. Intermediate PNGs use no compression. These additional worker caches are bounded to 112 MiB and released when the worker shuts down.
+
+R15 classic clothing uses Roblox's compositing UV maps and preserves the body meshes' original UV islands, including wrists, knees and ankles. Primitive fallback parts sample the sleeve or pant seam at internal joints instead of repeating the shoulder or hip cap.
+
 The backend supports FileMesh v1, v2, v3, v4, and v7. Compressed v7 meshes use Blender's bundled Draco decoder; official Blender builds include it. No extra Python package or export dialog is required. Downloads respect the key's access to each asset.
 
 ## Development
@@ -89,6 +95,7 @@ scripts/build.bash   # build/Prism.rbxm
 scripts/dev.bash     # build into your Studio Plugins folder and rebuild on change
 selene src
 lune run tests/selection.luau
+lune run tests/auto3d.luau
 lune run tests/drag.luau
 lune run tests/camera.luau
 lune run tests/preview-input.luau

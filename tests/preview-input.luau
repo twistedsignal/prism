@@ -9,12 +9,14 @@ local camera = load('src/CameraControls.luau')
 local settings = { cameraRotation = 20, cameraElevation = 15, zoom = 1 }
 local model = { name = 'Test', settings = function() return settings end }
 local controls, move, initiatingPress
+local automatic = false
+local visibility = {}
 local source = function(value) return function(next)
     if next ~= nil then value = next end
     return value
 end end
 local vide = {
-    source = source, cleanup = function() end, show = function() end,
+    source = source, cleanup = function() end, show = function(condition) table.insert(visibility, condition) end,
     effect = function(callback) callback() end,
     create = function() return function(properties)
         if properties.Name == 'CameraControls' then controls = properties end
@@ -37,6 +39,7 @@ local Preview = load('src/components/Preview.luau', {
              Font = { SourceSansBold = 'Bold', SourceSans = 'Regular' } },
 })
 Preview({
+    auto3d = function() return automatic end,
     currentModel = function() return model end, view = function() return 'blender' end,
     previewVersion = function() return 1 end, previewImage = function() return nil end,
     setCamera = function(values) for key, value in values do settings[key] = value end end,
@@ -51,3 +54,7 @@ assert(settings.cameraRotation == 35 and settings.cameraElevation == 22.5)
 controls.InputChanged({ UserInputType = 'Wheel', Position = { Z = 1 } })
 assert(settings.zoom > 1)
 print('Preview mouse drag and wheel checks passed')
+
+assert(visibility[1](), "Manual view picker should be visible")
+automatic = true
+assert(not visibility[1](), "Auto-3d must hide the view picker")

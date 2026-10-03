@@ -339,7 +339,7 @@ end
 
 const function RenderPage(props: Props): Frame
 	const store = props.store
-	const view = source("blender" :: Preview.View)
+	const view = store.previewView
 	const targets = useTargets(store)
 	const selectedTarget = source(nil :: string?)
 	const leftSize = source(Vector2.new(400, 700))
@@ -373,9 +373,9 @@ const function RenderPage(props: Props): Frame
 		store.uploadModels(models, chosen.creator, showUploadResults)
 	end
 
-	-- re-render when switching to the blender view or when the bridge comes back.
+	-- Refresh after the bridge reconnects. View changes never trigger another render.
 	effect(function()
-		if view() == "blender" and props.connected() then
+		if props.connected() then
 			task.defer(store.requestPreview)
 		end
 	end)
@@ -398,7 +398,16 @@ const function RenderPage(props: Props): Frame
 
 			Preview({
 				currentModel = store.currentModel,
-				view = view,
+				auto3d = store.auto3d,
+				view = function(value: Preview.View?): Preview.View
+					if value then
+						view(value)
+						if value == "blender" then
+							store.requestPreview()
+						end
+					end
+					return view()
+				end,
 				previewVersion = store.previewVersion,
 				previewImage = store.previewImage,
 				previewState = store.previewState,

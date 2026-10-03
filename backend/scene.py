@@ -401,7 +401,8 @@ def build(payload, directory):
         texture = part.get("texture")
         if part.get("layers"):
             import appearance
-            corners, baked = appearance.bake(corners, size, color_of(part), texture, part["layers"], textures)
+            corners, baked = appearance.bake(corners, size, color_of(part), texture, part["layers"], textures,
+                                             native_uv=kind == "mesh" and part["mesh"].get("uvs") is not None)
             baked_id = f"appearance:{index}"
             textures[baked_id] = baked
             texture = {"id": baked_id, "mode": "alpha"}
@@ -481,7 +482,7 @@ class SceneCache:
             payload, recovery_warnings, incomplete = self.resolver.resolve(payload)
         # Resolved bytes change the ID after credential repair, invalidating renderer objects.
         resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        identifier = scene_id(b"appearance-v4:" + resolved)
+        identifier = scene_id(b"appearance-v6:" + resolved)
         if incomplete:
             identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier

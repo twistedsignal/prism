@@ -9,7 +9,7 @@ const App = require("@self/App")
 const Bridge = require("@self/Bridge")
 
 const WIDGET_ID = "prism-main"
-const ICON = "rbxassetid://107203088937000"
+const ICON = "rbxassetid://112306091379612"
 
 const toolbar = plugin:CreateToolbar("Prism")
 const button = toolbar:CreateButton("Prism", "Render Studio models to icons with Blender", ICON)

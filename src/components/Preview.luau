@@ -21,6 +21,7 @@ export type View = "3d" | "blender"
 export type Props = {
 	currentModel: () -> Types.Model?,
 	view: (View?) -> View,
+	auto3d: () -> boolean,
 	previewVersion: () -> number,
 	previewImage: () -> EditableImage?,
 	previewState: () -> string,
@@ -203,7 +204,9 @@ const function Preview(props: Props): Frame
 		new("TextLabel")({
 			Name = "Title",
 			Position = UDim2.fromOffset(10, 6),
-			Size = UDim2.new(1, -170, 0, 24),
+			Size = function()
+				return UDim2.new(1, if props.auto3d() then -20 else -170, 0, 24)
+			end,
 			BackgroundTransparency = 1,
 			Text = function()
 				const model = props.currentModel()
@@ -215,18 +218,22 @@ const function Preview(props: Props): Frame
 			Font = Enum.Font.SourceSansBold,
 			TextSize = 16,
 		}),
-		Segmented({
-			options = { "3D", "Blender" },
-			selected = function()
-				return if props.view() == "3d" then 1 else 2
-			end,
-			onSelect = function(index)
-				props.view(if index == 1 then "3d" else "blender")
-			end,
-			size = UDim2.fromOffset(140, 24),
-			position = UDim2.new(1, -10, 0, 6),
-			anchorPoint = Vector2.new(1, 0),
-		}),
+		vide.show(function()
+			return not props.auto3d()
+		end, function()
+			return Segmented({
+				options = { "3D", "Blender" },
+				selected = function()
+					return if props.view() == "3d" then 1 else 2
+				end,
+				onSelect = function(index)
+					props.view(if index == 1 then "3d" else "blender")
+				end,
+				size = UDim2.fromOffset(140, 24),
+				position = UDim2.new(1, -10, 0, 6),
+				anchorPoint = Vector2.new(1, 0),
+			})
+		end),
 		new("Frame")({
 			Name = "Body",
 			Position = UDim2.fromOffset(8, 36),
@@ -283,7 +290,7 @@ const function Preview(props: Props): Frame
 			}),
 			Spinner(function()
 				const model = props.currentModel()
-				return model ~= nil and (model.state() == "serializing" or model.state() == "sending"
+				return model ~= nil and ((not props.auto3d() and (model.state() == "serializing" or model.state() == "sending"))
 					or (props.view() == "blender" and props.previewState() == "rendering")
 					or props.busy() == "Rendering" or props.busy() == "Uploading")
 			end),
@@ -302,7 +309,7 @@ const function Preview(props: Props): Frame
 				BackgroundTransparency = 0.1,
 				BorderSizePixel = 0,
 				Visible = function()
-					return status() ~= "" and (props.view() == "blender" or props.currentModel() == nil)
+					return status() ~= "" and (props.view() == "blender" or props.currentModel() == nil or props.previewState() == "error")
 				end,
 				Text = status,
 				TextWrapped = true,

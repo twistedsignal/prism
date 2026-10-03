@@ -416,22 +416,23 @@ const function appearanceLayers(context: Context, part: BasePart): { any }
 			end
 		end
 		const range = { before / math.max(total, 0.001), (before + part.Size.Y) / math.max(total, 0.001) }
+		const r15 = #sequence > 1
 		-- Pants underneath shirts, then T-shirt graphics, as Studio layers them.
 		for _, clothing in rig:GetChildren() do
 			if clothing:IsA("Pants") and limb[2] ~= "arm" then
 				add(contentOf(clothing, "PantsTemplateContent", "PantsTemplate"),
-					{ region = limb[1], range = range, tint = { clothing.Color3.R, clothing.Color3.G, clothing.Color3.B } })
+					{ region = limb[1], range = range, r15 = r15, tint = { clothing.Color3.R, clothing.Color3.G, clothing.Color3.B } })
 			end
 		end
 		for _, clothing in rig:GetChildren() do
 			if clothing:IsA("Shirt") and limb[2] ~= "leg" then
 				add(contentOf(clothing, "ShirtTemplateContent", "ShirtTemplate"),
-					{ region = limb[1], range = range, tint = { clothing.Color3.R, clothing.Color3.G, clothing.Color3.B } })
+					{ region = limb[1], range = range, r15 = r15, tint = { clothing.Color3.R, clothing.Color3.G, clothing.Color3.B } })
 			end
 		end
 		for _, clothing in rig:GetChildren() do
 			if clothing:IsA("ShirtGraphic") and limb[2] == "torso" then
-				add(contentOf(clothing, "GraphicContent", "Graphic"), { face = "Front", range = range,
+				add(contentOf(clothing, "GraphicContent", "Graphic"), { face = "Front", range = range, r15 = r15,
 					tint = { clothing.Color3.R, clothing.Color3.G, clothing.Color3.B }, graphic = true })
 			end
 		end

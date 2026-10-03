@@ -96,6 +96,16 @@ const function SettingsPage(props: Props): ScrollingFrame
 
 		new("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
 
+		heading("Plugin", nextOrder()),
+		row(ToggleSetting({
+			name = "Auto-3d",
+			index = 0,
+			labelWidth = 0.35,
+			description = "Show 3D while adjusting your model, then display the finished Blender preview automatically.",
+			value = store.auto3d,
+			onChange = store.setAuto3d,
+		})),
+
 		heading("Output", nextOrder()),
 		row(TextBoxSetting({
 			name = "Output folder",

@@ -11,6 +11,7 @@ const source = vide.source
 
 const VERSION = require("./Version")
 
+const AUTO_3D_KEY = "PrismAuto3d"
 const LAST_SETTINGS_KEY = "PrismLastSettings"
 const UPDATE_CHECK_INTERVAL = 30 * 60
 const THUMBNAIL_SIZE = 128
@@ -50,6 +51,10 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const mode = source("all" :: Mode)
 	const activePreset = source(nil :: string?)
 	const notice = source(nil :: Notice?)
+	const auto3d = source(true)
+	const previewView = source("3d" :: "3d" | "blender")
+	local preferenceChanged = false
+	local previewRevision = 0
 	const previewVersion = source(0)
 	const previewState = source("idle" :: "idle" | "rendering" | "error")
 	const previewError = source(nil :: string?)
@@ -57,6 +62,16 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const update = source(nil :: UpdateInfo?)
 	const updateState = source("idle" :: UpdateState)
 	const installedVersion = source(nil :: string?)
+
+	task.spawn(function()
+		const ok, saved = pcall(Data.load, plugin, AUTO_3D_KEY, true)
+		if ok and type(saved) == "boolean" and not preferenceChanged then
+			auto3d(saved)
+			if not saved then
+				previewView("blender")
+			end
+		end
+	end)
 
 	local lastSettings: Types.Settings = {}
 	task.spawn(function()
@@ -182,9 +197,17 @@ const function create(plugin: Plugin, bridge: Bridge)
 	-- previews
 	-- ---------------------------------------------------------------
 
+	const function invalidatePreview()
+		previewRevision += 1
+		if auto3d() then
+			previewView("3d")
+		end
+	end
+
 	local previewBusy = false
 	local previewDirty = false
 	requestPreview = function()
+		invalidatePreview()
 		previewDirty = true
 		if previewBusy then
 			return
@@ -197,9 +220,10 @@ const function create(plugin: Plugin, bridge: Bridge)
 				if model == nil or model.state() == "serializing" or not bridge.connected() then
 					break
 				end
+				const revision = previewRevision
 				previewState("rendering")
 				const response = render(model, nil, "preview")
-				if destroyed or model ~= currentModel() then
+				if destroyed or model ~= currentModel() or revision ~= previewRevision then
 					continue
 				end
 				if response == nil then
@@ -210,6 +234,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 					previewVersion(previewVersion() + 1)
 					previewState("idle")
 					previewError(nil)
+					if auto3d() then
+						previewView("blender")
+					end
 				elseif response.status ~= 409 then
 					previewState("error")
 					previewError(response.error)
@@ -408,6 +435,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 
 	local cameraToken = 0
 	const function applyToTargets(change: (Types.Settings) -> (), deferPreview: boolean?)
+		invalidatePreview()
 		const affected = targets()
 		for _, model in affected do
 			const settings = cloneSettings(model.settings())
@@ -747,6 +775,19 @@ const function create(plugin: Plugin, bridge: Bridge)
 		installedVersion = installedVersion,
 		checkForUpdate = checkForUpdate,
 		installUpdate = installUpdate,
+		auto3d = auto3d,
+		previewView = previewView,
+		setAuto3d = function(value: boolean)
+			preferenceChanged = true
+			auto3d(value)
+			if value then
+				previewView("3d")
+				requestPreview()
+			end
+			task.spawn(function()
+				pcall(Data.save, plugin, AUTO_3D_KEY, value)
+			end)
+		end,
 		previewVersion = previewVersion,
 		previewState = previewState,
 		previewError = previewError,

@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 import appearance
 import render_cache
 import scene
+import mesh_asset
 from test_assets import mesh_v2
 
 import assets
@@ -33,6 +34,45 @@ def texel(baked, uv):
 
 
 class AppearanceTests(unittest.TestCase):
+    def test_r15_native_hand_lower_leg_and_foot_joints_use_limb_rows(self):
+        template = np.zeros((559, 585, 4), dtype=np.uint8)
+        template[:] = [255, 255, 255, 255]
+        # Distinguish shoulder/hip caps from the sleeve/pant body and end cap.
+        template[355:479] = [255, 128, 0, 255]
+        template[479:551] = [0, 0, 255, 255]
+        for name in ("RightHand", "LeftHand", "RightLowerLeg", "LeftLowerLeg", "RightFoot", "LeftFoot"):
+            with self.subTest(part=name):
+                mesh = mesh_asset.decode((Path(__file__).parent / "fixtures" / "r15" / f"{name}.mesh").read_bytes())
+                original = scene.mesh_corners(mesh)
+                corners, baked = appearance.bake(
+                    original, [1, 1, 1], (0, 1, 0), None,
+                    [{"id": "clothing", "region": "right" if name.startswith("Right") else "left", "r15": True}],
+                    {"clothing": texture(template)}, native_uv=True,
+                )
+                self.assertEqual(corners, original, "Native clothing must preserve geometry, UVs and normals")
+                top_colors = []
+                for start in range(0, len(corners), 3):
+                    normal = np.mean([corner[2] for corner in corners[start:start + 3]], axis=0)
+                    if normal[1] > 0.7:
+                        uv = np.mean([corner[1] for corner in corners[start:start + 3]], axis=0)
+                        top_colors.append(texel(baked, uv))
+                self.assertTrue(top_colors)
+                self.assertNotIn((255, 255, 255, 255), top_colors, "Interior joints must not reuse the shoulder/hip cap")
+                self.assertIn((255, 128, 0, 255), top_colors)
+
+    def test_r15_part_fallback_does_not_repeat_outer_caps_at_internal_joints(self):
+        template = np.zeros((559, 585, 4), dtype=np.uint8)
+        template[:] = [255, 255, 255, 255]
+        template[355:479] = [255, 0, 0, 255]
+        corners, baked = appearance.bake(
+            scene.block([1, 0.3, 1]), [1, 0.3, 1], (0, 1, 0), None,
+            [{"id": "shirt", "region": "right", "range": [0.875, 1], "r15": True}],
+            {"shirt": texture(template)},
+        )
+        for _, uv, normal in corners:
+            if normal[1] > 0:
+                self.assertEqual(texel(baked, uv), (255, 0, 0, 255))
+
     def test_classic_head_uses_builtin_geometry_and_nonuniform_scale(self):
         original = scene.head([1, 1, 1])
         scaled = scene.head([1.25, 2, 0.75])
