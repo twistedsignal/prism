@@ -4,6 +4,8 @@
   <p>Render Roblox Studio models into icons with Blender, right from a Studio plugin.</p>
 </div>
 
+#### Please ⭐ the repo if you like it!!
+
 Select models in Studio, adjust the camera and effects, then save PNGs or upload them to Roblox. Blender handles the final preview and render.
 
 ## Install
