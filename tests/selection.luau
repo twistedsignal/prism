@@ -13,6 +13,7 @@ end
 
 local pending = {}
 local serialized = {}
+local delayed = {}
 local duringSerialize = nil
 local guid = 0
 local modules = {
@@ -55,7 +56,9 @@ local storeModule = luau.load(code, {
 		},
 		task = {
 			spawn = function(callback) table.insert(pending, callback) end,
-			delay = function() end,
+			delay = function(time, callback)
+				if time == 0.2 then table.insert(delayed, callback) end
+			end,
 			-- Stop the update timer after its first wait.
 			wait = function() coroutine.yield() end,
 		},
@@ -138,11 +141,17 @@ store.useSelection({ { Name = "After cleanup" } })
 assert(#store.models() == 1, "Disposed stores must ignore selection events")
 local sceneRequests = 0
 local incomplete = true
+local duringSend = nil
 local retryStore = storeModule.create({}, {
 	connected = function() return true end,
 	request = function(_, path)
 		if path == "/scenes" then
 			sceneRequests += 1
+			if duringSend then
+				local callback = duringSend
+				duringSend = nil
+				callback()
+			end
 			return { ok = true, body = {
 				sceneId = tostring(sceneRequests), incomplete = incomplete,
 				warnings = if incomplete then { "Mesh recovery failed; using a box" } else {},
@@ -163,5 +172,56 @@ drain()
 assert(sceneRequests == 2, "Reselecting an incomplete model must retry backend recovery")
 assert(retryStore.currentModel().warning() == nil, "Successful recovery must clear placeholder warnings")
 assert(#serialized == serializationsBeforeRetry, "Recovery must preserve the existing Studio payload")
+-- Refresh the same model without reselection, preserving settings and identity.
+local retained = retryStore.currentModel()
+retained.settings({ zoom = 3 })
+local function flushEdits()
+	while #delayed > 0 do table.remove(delayed, 1)() end
+	drain()
+end
+local beforeEdits = #serialized
+retryStore.refreshModel(retained)
+retryStore.refreshModel(retained)
+retryStore.refreshModel(retained)
+assert(retained.sceneId() == nil and retained.state() == "serializing")
+assert(retryStore.previewView() == "3d")
+flushEdits()
+assert(#serialized == beforeEdits + 1, "Rapid edits must serialize only once")
+assert(retained.visualVersion() == 2, "Viewport clones refresh after the edit debounce")
+assert(sceneRequests == 3 and retained.sceneId() == "3", "Edits must replace the backend scene")
+assert(retryStore.currentModel() == retained and retained.settings().zoom == 3)
+
+-- A newer edit during serialization must discard the superseded payload.
+duringSerialize = function() retryStore.refreshModel(retained) end
+beforeEdits = #serialized
+retryStore.refreshModel(retained)
+flushEdits()
+assert(#serialized == beforeEdits + 2 and sceneRequests == 4)
+
+-- An edit while a scene upload yields invalidates that upload, even if payloads encode identically.
+retryStore.refreshModel(retained)
+duringSend = function()
+	retryStore.refreshModel(retained)
+end
+local pendingEdit = table.remove(delayed, 1)
+pendingEdit()
+assert(retained.sceneId() == nil and retained.state() == "serializing", "A superseded upload must not mark the model ready")
+flushEdits()
+assert(retained.sceneId() == "6" and retained.state() == "ready")
+
+-- Removal cancels a scheduled refresh and preserves the settings for reselection.
+retryStore.refreshModel(retained)
+beforeEdits = #serialized
+retryStore.useSelection({})
+flushEdits()
+assert(#serialized == beforeEdits, "Removed models must not refresh")
+retryStore.useSelection({ recoverable })
+drain()
+assert(retryStore.currentModel().settings().zoom == 3)
+retained = retryStore.currentModel()
+retryStore.refreshModel(retained)
+beforeEdits = #serialized
 retryStore.destroy()
+flushEdits()
+assert(#serialized == beforeEdits, "Destroying the store cancels pending edits")
 print("Selection checks passed")

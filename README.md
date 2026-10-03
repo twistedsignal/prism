@@ -88,6 +88,8 @@ Image effects reuse the rendered image, so every effect edit skips Blender entir
 
 R15 classic clothing uses Roblox's compositing UV maps and preserves the body meshes' original UV islands, including wrists, knees and ankles. Primitive fallback parts sample the sleeve or pant seam at internal joints instead of repeating the shoulder or hip cap.
 
+Selected models refresh automatically when you edit their geometry, colors, materials, textures or clothing, or add and remove descendants. Rapid edits are combined before Prism sends a new scene. Your render settings stay in place.
+
 Use the search bar below the render presets to filter settings by name, description, key or section. Matching sections and groups expand while you search. Clear the search to restore their previous collapse state. Conditional settings appear when their controls are enabled.
 
 The Lighting section's **Sync Lighting** button copies the place's global lighting into the

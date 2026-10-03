@@ -81,6 +81,7 @@ export type Model = {
 	assetId: (string?) -> string?,
 	thumbnail: EditableImage?,
 	thumbnailVersion: (number?) -> number,
+	visualVersion: (number?) -> number,
 }
 
 return nil

@@ -8,6 +8,7 @@ const StatusDot = require("./components/StatusDot")
 const Overlay = require("./Overlay")
 const Serializer = require("./Serializer")
 const Store = require("./Store")
+const ModelChanges = require("./ModelChanges")
 const RenderPage = require("./pages/RenderPage")
 const SettingsPage = require("./pages/SettingsPage")
 const UpdatePrompt = require("./UpdatePrompt")
@@ -31,6 +32,35 @@ const function App(props: Props): Frame
 	const bridge = props.bridge
 	const store = Store.create(props.plugin, bridge)
 	cleanup(store.destroy)
+
+	cleanup(ModelChanges.watch(game:GetService("MaterialService"), function()
+		for _, model in store.models() do
+			store.refreshModel(model)
+		end
+	end))
+	const watchers: { [Instance]: () -> () } = {}
+	effect(function()
+		const retained = {}
+		for _, model in store.models() do
+			retained[model.instance] = true
+			if not watchers[model.instance] then
+				watchers[model.instance] = ModelChanges.watch(model.instance, function()
+					store.refreshModel(model)
+				end)
+			end
+		end
+		for instance, disconnect in watchers do
+			if not retained[instance] then
+				disconnect()
+				watchers[instance] = nil
+			end
+		end
+	end)
+	cleanup(function()
+		for _, disconnect in watchers do
+			disconnect()
+		end
+	end)
 
 	const page = source("render" :: "render" | "settings")
 	const rootSize = source(Vector2.new(720, 860))

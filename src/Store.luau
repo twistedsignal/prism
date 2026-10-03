@@ -18,6 +18,7 @@ const UPDATE_CHECK_INTERVAL = 30 * 60
 const THUMBNAIL_SIZE = 128
 const THUMBNAIL_DELAY = 0.6
 const SAVE_DELAY = 1
+const MODEL_CHANGE_DELAY = 0.2
 
 type Bridge = {
 	connected: () -> boolean,
@@ -97,6 +98,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 	local previewImage: EditableImage? = nil
 	const payloads: { [string]: string } = {}
 	const recoveryNeeded: { [string]: boolean } = {}
+	const modelRevisions: { [string]: number } = {}
 	-- settings of deselected instances, restored when they're selected again.
 	const rememberedSettings: { [Instance]: Types.Settings } = setmetatable({}, { __mode = "k" }) :: any
 	local destroyed = false
@@ -168,9 +170,10 @@ const function create(plugin: Plugin, bridge: Bridge)
 		if payload == nil then
 			return false
 		end
+		const revision = modelRevisions[model.id]
 		model.state("sending")
 		const response = bridge.request("POST", "/scenes", payload)
-		if destroyed or not table.find(models(), model) then
+		if destroyed or not table.find(models(), model) or modelRevisions[model.id] ~= revision or payloads[model.id] ~= payload then
 			return false
 		end
 		if not response.ok then
@@ -187,6 +190,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 	end
 
 	const function render(model: Types.Model, size: number?, client: string): any
+		if model.state() == "serializing" then
+			return nil
+		end
 		if model.sceneId() == nil and not sendScene(model) then
 			return nil
 		end
@@ -293,8 +299,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 				if not table.find(models(), model) or not bridge.connected() then
 					continue
 				end
+				const revision = modelRevisions[model.id]
 				const response = render(model, THUMBNAIL_SIZE, `thumb:{model.id}`)
-				if not destroyed and table.find(models(), model) and response and response.ok then
+				if not destroyed and table.find(models(), model) and revision == modelRevisions[model.id] and response and response.ok then
 					model.thumbnail = writeImage(model.thumbnail, response.body)
 					model.thumbnailVersion(model.thumbnailVersion() + 1)
 				end
@@ -324,12 +331,77 @@ const function create(plugin: Plugin, bridge: Bridge)
 			rememberedSettings[model.instance] = model.settings()
 			payloads[model.id] = nil
 			recoveryNeeded[model.id] = nil
+			modelRevisions[model.id] = nil
 			thumbnailTokens[model.id] = nil
 			if model.thumbnail then
 				model.thumbnail:Destroy()
 				model.thumbnail = nil
 			end
 		end
+	end
+
+	const function serializeModel(model: Types.Model, revision: number)
+		if destroyed or not table.find(models(), model) or modelRevisions[model.id] ~= revision then
+			return
+		end
+		model.name = model.instance.Name
+		model.visualVersion(model.visualVersion() + 1)
+		const function failed(message: string)
+			model.state("error")
+			model.warning(message)
+			if model == currentModel() then
+				previewState("error")
+				previewError(message)
+			end
+		end
+		const ok, result = pcall(Serializer.serialize, model.instance)
+		if destroyed or not table.find(models(), model) or modelRevisions[model.id] ~= revision then
+			return
+		end
+		if not ok then
+			failed(`Could not read {model.name}: {result}`)
+			return
+		end
+		if #result.payload.parts == 0 then
+			failed(`{model.name} has no visible parts`)
+			return
+		end
+		result.payload.warnings = result.warnings
+		payloads[model.id] = HttpService:JSONEncode(result.payload)
+		if #result.warnings > 0 then
+			model.warning(table.concat(result.warnings, "\n"))
+		end
+		model.state("sending")
+		if bridge.connected() and sendScene(model) then
+			if model == currentModel() then
+				requestPreview()
+			end
+			queueThumbnail(model)
+		end
+	end
+
+	const function refreshModel(model: Types.Model)
+		if destroyed or not table.find(models(), model) then
+			return
+		end
+		const revision = (modelRevisions[model.id] or 0) + 1
+		modelRevisions[model.id] = revision
+		payloads[model.id] = nil
+		recoveryNeeded[model.id] = nil
+		model.sceneId(nil)
+		model.state("serializing")
+		model.warning(nil)
+		if model == currentModel() then
+			invalidatePreview()
+			previewState("rendering")
+			previewError(nil)
+			previewTextBounds(nil)
+		end
+		task.delay(MODEL_CHANGE_DELAY, function()
+			if not destroyed and table.find(models(), model) and modelRevisions[model.id] == revision then
+				serializeModel(model, revision)
+			end
+		end)
 	end
 
 	const function useSelection(roots: { Instance })
@@ -378,7 +450,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 				assetId = source(nil :: string?),
 				thumbnail = nil,
 				thumbnailVersion = source(0),
+				visualVersion = source(0),
 			}
+			modelRevisions[model.id] = 0
 			table.insert(list, model)
 			table.insert(added, model)
 			firstSelected = firstSelected or #list
@@ -419,32 +493,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 				if destroyed or not table.find(models(), model) then
 					continue
 				end
-				const ok, result = pcall(Serializer.serialize, model.instance)
-				if destroyed or not table.find(models(), model) then
-					continue
-				end
-				if not ok then
-					model.state("error")
-					model.warning(`Could not read {model.name}: {result}`)
-					continue
-				end
-				if #result.payload.parts == 0 then
-					model.state("error")
-					model.warning(`{model.name} has no visible parts`)
-					continue
-				end
-				result.payload.warnings = result.warnings
-				payloads[model.id] = HttpService:JSONEncode(result.payload)
-				if #result.warnings > 0 then
-					model.warning(table.concat(result.warnings, "\n"))
-				end
-				model.state("sending")
-				if bridge.connected() and sendScene(model) then
-					if model == currentModel() then
-						requestPreview()
-					end
-					queueThumbnail(model)
-				end
+				serializeModel(model, 0)
 			end
 		end)
 	end
@@ -932,6 +981,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end,
 		currentModel = currentModel,
 		useSelection = useSelection,
+		refreshModel = refreshModel,
 		select = select,
 		setValue = setValue,
 		syncLighting = syncLighting,

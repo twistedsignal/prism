@@ -118,6 +118,7 @@ const function Viewport(props: Props): ViewportFrame
 	}) :: ViewportFrame
 	local clone: Instance? = nil
 	local clonedFrom: Instance? = nil
+	local clonedVersion = -1
 
 	effect(function()
 		const model = props.currentModel()
@@ -130,7 +131,8 @@ const function Viewport(props: Props): ViewportFrame
 			end
 			return
 		end
-		if clonedFrom ~= model.instance then
+		const version = model.visualVersion()
+		if clonedFrom ~= model.instance or clonedVersion ~= version then
 			if clone then
 				clone:Destroy()
 			end
@@ -142,6 +144,7 @@ const function Viewport(props: Props): ViewportFrame
 			model.instance.Archivable = archivable
 			clone = if ok then copy else nil
 			clonedFrom = model.instance
+			clonedVersion = version
 			if clone then
 				-- keep only geometry; scripts and sounds have no business in a viewport.
 				for _, descendant in clone:GetDescendants() do
