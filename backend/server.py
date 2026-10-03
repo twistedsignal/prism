@@ -11,16 +11,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-import bpy
 import config
 import platform_open
-import renderer
 import schema
 import updater
 import uploader
 from jobs import JobQueue, Superseded
-from render_cache import RenderCache
 from scene import SceneCache, SceneError
+from worker_client import Worker
 
 import assets
 
@@ -42,34 +40,22 @@ def safe_filename(name):
 
 
 class Bridge:
-    """Shared state for request handlers. Everything touching bpy goes through jobs."""
+    """Shared state for request handlers; Blender jobs use an on-demand worker."""
 
     def __init__(self, store):
         self.store = store
         self.jobs = JobQueue()
-        self.scenes = SceneCache(config.cache_dir(), assets.Resolver(
-            config.cache_dir(), lambda: self.store.get_config()["ravenPath"],
-        ))
-        self.renderer = None
-        self.render_cache = RenderCache()
+        self.scenes = SceneCache(config.cache_dir())
+        self.worker = Worker()
         self.updates = updater.Checker()
         self.updating = threading.Lock()
 
-    # ---- main-thread work ------------------------------------------------
+    # ---- serialized worker jobs -----------------------------------------
 
-    def render(self, scene_id, settings, size, aa):
-        if self.renderer is None:
-            self.renderer = renderer.Renderer()
+    def render(self, scene_id, settings, size, aa, format="rgba"):
         if not self.scenes.exists(scene_id):
             raise HttpError(404, "Unknown scene; send it again")
-        normalized = schema.normalize(settings)
-        cache_key = (scene_id, json.dumps(normalized, sort_keys=True), size, aa)
-        pixels = self.render_cache.get(cache_key)
-        if pixels is None:
-            key = self.renderer.load(self.scenes.path(scene_id))
-            pixels = self.renderer.render(key, normalized, size, aa)
-            self.render_cache.put(cache_key, pixels)
-        return pixels
+        return self.worker.render(scene_id, schema.normalize(settings), size, aa, format)
 
     def output_path(self, folder, name, index, overwrite, pattern):
         stem = safe_filename(pattern.replace("{name}", safe_filename(name)).replace("{index}", str(index)))
@@ -88,14 +74,14 @@ class Bridge:
         for index, item in enumerate(items, start=1):
             name = item.get("name") or f"Icon {index}"
             try:
-                pixels = self.render(
+                png = self.render(
                     item.get("sceneId"), item.get("settings"),
-                    settings_config["renderSize"], settings_config["renderAA"],
+                    settings_config["renderSize"], settings_config["renderAA"], "png",
                 )
                 path = self.output_path(
                     folder, name, index, settings_config["overwrite"], settings_config["filenamePattern"],
                 )
-                renderer.save_png_pixels(pixels, path)
+                path.write_bytes(png)
                 results.append({"name": name, "path": str(path)})
             except Exception as error:  # noqa: BLE001 - reported per item
                 results.append({"name": name, "error": error_message(error)})
@@ -198,9 +184,11 @@ def make_handler(bridge):
         # ---- routes ------------------------------------------------------
 
         def status(self):
+            process = bridge.worker.process
             return 200, {
                 "version": config.version(),
-                "blender": bpy.app.version_string,
+                "blender": bridge.worker.version,
+                "workerRunning": process is not None and process.poll() is None,
                 "busy": bridge.jobs.busy,
                 "platform": sys.platform,
             }
@@ -232,9 +220,9 @@ def make_handler(bridge):
 
         def post_scene(self):
             raw = self.read_body()
-            payload = self.read_json(raw)
-            identifier, warnings = bridge.jobs.submit(lambda: bridge.scenes.add(raw, payload), timeout=RENDER_TIMEOUT)
-            return 200, {"sceneId": identifier, "warnings": warnings, "incomplete": bridge.scenes.incomplete(identifier)}
+            self.read_json(raw)
+            result = bridge.jobs.submit(lambda: bridge.worker.add_scene(raw), timeout=RENDER_TIMEOUT)
+            return 200, result
 
         def preview(self):
             body = self.read_json()
@@ -248,8 +236,7 @@ def make_handler(bridge):
                 raise HttpError(400, "sceneId is required")
 
             def work():
-                pixels = bridge.render(scene_id, body.get("settings"), size, settings_config["previewAA"])
-                return renderer.to_rgba8_top_down(pixels)
+                return bridge.render(scene_id, body.get("settings"), size, settings_config["previewAA"])
 
             data = bridge.jobs.submit(work, client=client, timeout=RENDER_TIMEOUT)
             return 200, {"width": size, "height": size, "pixels": base64.b64encode(data).decode("ascii")}
@@ -363,12 +350,15 @@ def serve(store, port):
     httpd.daemon_threads = True
     thread = threading.Thread(target=httpd.serve_forever, name="prism-http", daemon=True)
     thread.start()
-    print(f"[prism] Prism {config.version()} listening on http://127.0.0.1:{port} (Blender {bpy.app.version_string})")
+    print(f"[prism] Prism {config.version()} listening on http://127.0.0.1:{port} (on-demand Blender)")
     sys.stdout.flush()
     try:
         while True:
             bridge.jobs.run_pending()
+            bridge.worker.stop_if_idle()
     except KeyboardInterrupt:
         print("[prism] Shutting down")
     finally:
         httpd.shutdown()
+        httpd.server_close()
+        bridge.worker.close()

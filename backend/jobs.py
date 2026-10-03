@@ -1,4 +1,4 @@
-"""Run bpy work on Blender's main thread for the threaded HTTP server."""
+"""Serialize backend jobs for the threaded HTTP server."""
 
 import queue
 import threading

@@ -59,8 +59,16 @@ part.IsA = function(_, class) return class == 'BasePart' or class == 'Part' or c
 part.FindFirstChildWhichIsA = function(_, class) return if class == 'SpecialMesh' then specialMesh else nil end
 local head = serializer.serialize(part).payload.parts[1]
 assert(head.kind == 'head', 'MeshType.Head must never become a sphere')
-assert(head.size[1] == 1.25 and head.size[2] == 2 and head.size[3] == 0.75)
+assert(math.abs(head.size[1] - 0.6) < 1e-6 and math.abs(head.size[2] - 1.6) < 1e-6)
+assert(head.size[1] == head.size[3])
 assert(head.cframe[1] == 0.25 and head.cframe[2] == 0.5 and head.cframe[3] == -0.25)
+specialMesh.Scale = roblox.Vector3.new(1.25, 1.25, 1.25)
+local classic = serializer.serialize(part).payload.parts[1]
+assert(classic.size[1] == 1 and classic.size[2] == 1 and classic.size[3] == 1)
+part.Size = roblox.Vector3.new(0.8, 0.4, 0.4)
+local small = serializer.serialize(part).payload.parts[1]
+assert(math.abs(small.size[1] - 0.4) < 1e-6 and math.abs(small.size[2] - 0.4) < 1e-6)
+assert(small.size[1] == small.size[3], 'Head width and depth must stay constrained')
 specialMesh.MeshType = 'Sphere'
 assert(serializer.serialize(part).payload.parts[1].kind == 'ball')
 part.FindFirstChildWhichIsA = function() return nil end

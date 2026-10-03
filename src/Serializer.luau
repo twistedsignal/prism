@@ -505,8 +505,12 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 			end
 		else
 			entry.kind = SPECIAL_SHAPES[meshType] or "block"
-			-- The built-in head uses a 2 x 1 x 1 reference part.
-			const size = part.Size * scale * (if meshType == Enum.MeshType.Head then Vector3.new(0.5, 1, 1) else Vector3.one)
+			local size = part.Size * scale
+			if meshType == Enum.MeshType.Head then
+				-- Head constrains X/Z together and compensates for its built-in 1.25 scale.
+				const xz = math.min(size.X, size.Z) / 1.25
+				size = Vector3.new(xz, size.Y / 1.25, xz)
+			end
 			entry.size = { size.X, size.Y, size.Z }
 			if specialMesh.Offset ~= Vector3.zero then
 				entry.cframe = { (relative * CFrame.new(specialMesh.Offset)):GetComponents() }

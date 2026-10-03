@@ -60,7 +60,9 @@ Studio plugin ──HTTP 127.0.0.1:47821──▶ backend (runs inside Blender)
                                           saves PNGs, uploads through raven
 ```
 
-The backend runs in Blender's own Python, so it needs nothing else installed. It only listens on `127.0.0.1` and rejects browser requests. It starts at login through a systemd user service on Linux, a LaunchAgent on macOS, or a Task Scheduler task on Windows.
+The HTTP backend runs in plain Python, using Blender's bundled interpreter when installed. It starts Blender only when scene preparation or rendering needs it, keeps the worker warm while you work, and shuts it down after 60 seconds without a scene or render job. The next job starts a fresh worker automatically. Settings, uploads and update checks keep working while Blender is stopped.
+
+It only listens on `127.0.0.1` and rejects browser requests. It starts at login through a systemd user service on Linux, a LaunchAgent on macOS, or a Task Scheduler task on Windows. Existing installations migrate their startup entry on the first launch after updating to v0.5.0.
 
 | File | Location |
 |---|---|
@@ -72,7 +74,7 @@ The backend runs in Blender's own Python, so it needs nothing else installed. It
 
 Edit your existing personal API key in the Creator Dashboard and add **Legacy Assets > Manage** (`legacy-asset:manage`). Keep **Assets > Read and Write** enabled. Prism's updater upgrades Raven automatically and enables its download command; you do not need to replace your key. If the key is missing permissions, rendering uses placeholders with a warning. After fixing permissions, select the model again to retry recovery.
 
-Completed renders also use a 64 MB memory cache, shared by previews, exports and uploads. Changing a model, camera, render settings, output size or antialiasing selects a different cache entry.
+Completed renders use a 64 MB memory cache in the Blender worker, shared by previews, exports and uploads. Changing a model, camera, render settings, output size or antialiasing selects a different cache entry. Worker shutdown releases this cache and imported models; prepared scenes remain on disk for the next worker.
 
 The backend supports FileMesh v1, v2, v3, v4, and v7. Compressed v7 meshes use Blender's bundled Draco decoder; official Blender builds include it. No extra Python package or export dialog is required. Downloads respect the key's access to each asset.
 
@@ -92,6 +94,7 @@ lune run tests/camera.luau
 lune run tests/preview-input.luau
 lune run tests/asset-routing.luau
 python3 -m unittest discover -s tests -p 'test_*.py'
+PRISM_TEST_BLENDER=/path/to/blender python3 -m unittest discover -s tests -p 'test_worker.py'
 ```
 
 `dev.bash` finds the Plugins folder of a Vinegar flatpak or native prefix, macOS or Windows. Set `PRISM_PLUGINS_DIR` to override it.
@@ -99,7 +102,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 Run the backend from the checkout:
 
 ```sh
-blender --background --factory-startup --python backend/main.py -- serve --port 47821
+python3 backend/main.py serve --blender /path/to/blender --port 47821
 ```
 
 Render an OBJ directly, without the server:

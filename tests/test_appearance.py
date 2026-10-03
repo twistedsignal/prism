@@ -41,8 +41,8 @@ class AppearanceTests(unittest.TestCase):
             np.testing.assert_allclose(new_point, np.asarray(point) * [1.25, 2, 0.75])
             self.assertEqual(uv, new_uv)
             np.testing.assert_allclose(new_normal, np.asarray(normal) / [1.25, 2, 0.75])
-        bounds = np.ptp([point for point, _, _ in scene.head([1.25] * 3)], axis=0)
-        np.testing.assert_allclose(bounds, [1.4973113, 1.5030308, 1.4973113], atol=1e-6)
+        bounds = np.ptp([point for point, _, _ in original], axis=0)
+        np.testing.assert_allclose(bounds, [1.1978490, 1.2024246, 1.1978490], atol=1e-6)
 
     def test_classic_head_face_preserves_original_geometry(self):
         original = scene.head([1.25] * 3)

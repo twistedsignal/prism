@@ -9,6 +9,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 import config
+import runtime
 
 SERVICE_NAME = "prism"
 LAUNCH_AGENT = "dev.ivadsiuls.prism"
@@ -23,25 +24,11 @@ def blender_command(blender=None):
         return [blender]
     if os.environ.get("FLATPAK_ID"):
         return ["flatpak", "run", "--filesystem=home", os.environ["FLATPAK_ID"]]
-    import bpy
-
-    path = Path(bpy.app.binary_path)
-    if sys.platform == "win32":
-        # blender-launcher.exe runs Blender without opening a console window.
-        launcher = path.with_name("blender-launcher.exe")
-        if launcher.exists():
-            return [str(launcher)]
-    return [str(path)]
+    return runtime.blender_command()
 
 
 def serve_command(blender=None, log=None):
-    main = Path(__file__).resolve().with_name("main.py")
-    command = blender_command(blender) + [
-        "--background", "--factory-startup", "--python-exit-code", "1", "--python", str(main), "--", "serve",
-    ]
-    if log:
-        command += ["--log", str(log)]
-    return command
+    return runtime.serve_command(log)
 
 
 def run(command, check=True):
@@ -58,7 +45,7 @@ def systemd_unit_path():
     return base / "systemd" / "user" / f"{SERVICE_NAME}.service"
 
 
-def install_linux(blender):
+def install_linux(blender, start=True):
     command = " ".join(shlex.quote(part) for part in serve_command(blender))
     unit = systemd_unit_path()
     unit.parent.mkdir(parents=True, exist_ok=True)
@@ -77,7 +64,8 @@ def install_linux(blender):
     )
     run(["systemctl", "--user", "daemon-reload"])
     run(["systemctl", "--user", "enable", f"{SERVICE_NAME}.service"])
-    run(["systemctl", "--user", "restart", f"{SERVICE_NAME}.service"])
+    if start:
+        run(["systemctl", "--user", "restart", f"{SERVICE_NAME}.service"])
 
 
 def uninstall_linux():
@@ -101,7 +89,7 @@ def remove_legacy_launch_agents():
         plist.unlink(missing_ok=True)
 
 
-def install_macos(blender):
+def install_macos(blender, start=True):
     remove_legacy_launch_agents()
     log = Path.home() / "Library" / "Logs" / "Prism.log"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -123,8 +111,9 @@ def install_macos(blender):
         "</plist>\n"
     )
     domain = f"gui/{os.getuid()}"
-    run(["launchctl", "bootout", domain, str(plist)], check=False)
-    run(["launchctl", "bootstrap", domain, str(plist)])
+    if start:
+        run(["launchctl", "bootout", domain, str(plist)], check=False)
+        run(["launchctl", "bootstrap", domain, str(plist)])
 
 
 def uninstall_macos():
@@ -138,10 +127,10 @@ def uninstall_macos():
 # WINDOWS
 # ============================================================
 
-def install_windows(blender):
+def install_windows(blender, start=True):
     log = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Prism" / "prism.log"
     log.parent.mkdir(parents=True, exist_ok=True)
-    command = serve_command(blender, log)
+    command = serve_command(blender, log) + ["--managed"]
     arguments = subprocess.list2cmdline(command[1:])
     user = os.environ.get("USERDOMAIN", "") + "\\" + os.environ.get("USERNAME", "")
     task = f"""<?xml version="1.0" encoding="UTF-16"?>
@@ -164,9 +153,11 @@ def install_windows(blender):
         handle.write(task)
         path = handle.name
     try:
-        run(["schtasks", "/End", "/TN", TASK_NAME], check=False)
+        if start:
+            run(["schtasks", "/End", "/TN", TASK_NAME], check=False)
         run(["schtasks", "/Create", "/TN", TASK_NAME, "/XML", path, "/F"])
-        run(["schtasks", "/Run", "/TN", TASK_NAME])
+        if start:
+            run(["schtasks", "/Run", "/TN", TASK_NAME])
     finally:
         os.unlink(path)
 
@@ -180,7 +171,7 @@ def uninstall_windows():
 # ENTRY
 # ============================================================
 
-def install(blender=None, raven=None, creator=None):
+def install(blender=None, raven=None, creator=None, start=True):
     store = config.Store()
     changes = {"blenderPath": " ".join(blender_command(blender))}
     if raven:
@@ -191,11 +182,11 @@ def install(blender=None, raven=None, creator=None):
             changes["defaultCreator"] = creator
     store.update_config(changes)
     if sys.platform == "win32":
-        install_windows(blender)
+        install_windows(blender, start)
     elif sys.platform == "darwin":
-        install_macos(blender)
+        install_macos(blender, start)
     else:
-        install_linux(blender)
+        install_linux(blender, start)
     print("[prism] Startup entry installed")
 
 

@@ -198,7 +198,7 @@ const function SettingsPage(props: Props): ScrollingFrame
 		row(TextBoxSetting({
 			name = "Blender",
 			index = 1,
-			description = "Blender command the startup entry runs. Re-run the installer to change it.",
+			description = "Blender executable used for rendering. Re-run the installer to change it.",
 			value = text("blenderPath"),
 			onCommit = commit("blenderPath"),
 		})),

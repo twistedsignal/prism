@@ -240,12 +240,21 @@ def install(version):
 
 def restart():
     """Exit so the service manager starts the updated backend; spawn it ourselves when unmanaged."""
-    managed = bool(os.environ.get("INVOCATION_ID")) or os.environ.get("XPC_SERVICE_NAME", "").endswith("prism")
-    if not managed:
-        import bpy
+    managed = (
+        bool(os.environ.get("INVOCATION_ID"))
+        or os.environ.get("XPC_SERVICE_NAME", "").endswith("prism")
+        or os.environ.get("PRISM_MANAGED") == "1"
+    )
+    if managed and sys.platform == "win32":
+        import runtime
 
-        main = backend_dir() / "main.py"
-        command = [bpy.app.binary_path, "--background", "--factory-startup", "--python", str(main), "--", "serve"]
+        runtime.restart_windows_task()
+        sys.stdout.flush()
+        os._exit(0)
+    if not managed:
+        import runtime
+
+        command = runtime.serve_command()
         if sys.platform == "win32":
             log = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Prism" / "prism.log"
             command += ["--log", str(log)]
