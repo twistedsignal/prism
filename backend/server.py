@@ -25,6 +25,7 @@ import assets
 MAX_BODY = 512 * 1024 * 1024
 RENDER_TIMEOUT = 600
 UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
+ALLOWED_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
 class HttpError(Exception):
@@ -71,7 +72,11 @@ class Bridge:
         folder = Path(settings_config["outputFolder"]).expanduser()
         folder.mkdir(parents=True, exist_ok=True)
         results = []
-        for index, item in enumerate(items, start=1):
+        for position, item in enumerate(items, start=1):
+            # {index} is the model's position in the plugin's list, not in this request.
+            index = item.get("index")
+            if isinstance(index, bool) or not isinstance(index, int) or index < 1:
+                index = position
             name = item.get("name") or f"Icon {index}"
             try:
                 png = self.render(
@@ -124,7 +129,12 @@ def make_handler(bridge):
             self.wfile.write(data)
 
         def read_body(self):
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError as error:
+                raise HttpError(400, "Invalid Content-Length") from error
+            if length < 0:
+                raise HttpError(400, "Invalid Content-Length")
             if length > MAX_BODY:
                 raise HttpError(413, "Request is too large")
             return self.rfile.read(length) if length else b""
@@ -149,6 +159,10 @@ def make_handler(bridge):
                     raise HttpError(403, "Browser requests are not allowed")
                 if self.headers.get("X-Prism") != "1":
                     raise HttpError(403, "Missing X-Prism header")
+                # Reject DNS rebinding: a rebound page sends its own host name.
+                host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
+                if host not in ALLOWED_HOSTS:
+                    raise HttpError(403, "Unexpected Host header")
                 path = self.path.split("?", 1)[0].rstrip("/") or "/"
                 handler = ROUTES.get((method, path))
                 argument = None
@@ -160,6 +174,8 @@ def make_handler(bridge):
                 status, value = handler(self, argument) if argument is not None else handler(self)
                 self.send_json(status, value)
             except HttpError as error:
+                # The body may be unread, so the connection can't be reused.
+                self.close_connection = True
                 self.send_json(error.status, {"error": error.message})
             except Superseded:
                 self.send_json(409, {"error": "superseded"})
@@ -255,6 +271,7 @@ def make_handler(bridge):
                 raise HttpError(400, "Choose who to upload to (user:<id> or group:<id>)")
             results = bridge.jobs.submit(lambda: bridge.export(items), timeout=RENDER_TIMEOUT * len(items))
             # Uploads wait on Roblox, so they run here rather than blocking renders.
+            resolver = assets.Resolver(config.cache_dir(), lambda: settings_config["ravenPath"])
             for result in results:
                 if "error" in result:
                     continue
@@ -264,6 +281,9 @@ def make_handler(bridge):
                     ))
                 except uploader.UploadError as error:
                     result["error"] = str(error)
+                    continue
+                # Open Cloud returns the Decal; ImageLabels need the image inside it.
+                result["imageId"] = resolver.decal_image_id(result["assetId"])
             return 200, {"results": results, "creator": creator}
 
         def update_status(self):
@@ -294,6 +314,14 @@ def make_handler(bridge):
             threading.Timer(1.0, updater.restart).start()
             return 200, {"version": version, "plugins": plugins, "restarting": True}
 
+        def restart(self):
+            """Restart so a changed port in the config takes effect."""
+            if not bridge.updating.acquire(blocking=False):
+                raise HttpError(409, "An update is already running")
+            print("[prism] Restarting at the plugin's request")
+            threading.Timer(1.0, updater.restart).start()
+            return 200, {"restarting": True, "port": bridge.store.get_config()["port"]}
+
         def open_folder(self):
             folder = bridge.store.get_config()["outputFolder"]
             platform_open.open_folder(folder)
@@ -320,6 +348,7 @@ def make_handler(bridge):
         ("POST", "/upload"): Handler.upload,
         ("GET", "/update"): Handler.update_status,
         ("POST", "/update"): Handler.update,
+        ("POST", "/restart"): Handler.restart,
         ("POST", "/open-folder"): Handler.open_folder,
         ("POST", "/pick-folder"): Handler.pick_folder,
     }

@@ -15,11 +15,28 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import config
 import mesh_asset
 import uploader
 
 MAX_BYTES = 128 * 1024 * 1024
-RAVEN_ARCHIVE = "https://github.com/twistedsignal/raven/archive/refs/tags/v0.3.0.tar.gz"
+# Keep in sync with install.sh and install.ps1 (tests/test_installers.py checks this).
+RAVEN_VERSION = "0.3.0"
+RAVEN_ARCHIVE = f"https://github.com/twistedsignal/raven/archive/refs/tags/v{RAVEN_VERSION}.tar.gz"
+IMAGE_PROPERTIES = (
+    "Texture",
+    "TextureContent",
+    "TextureId",
+    "TextureID",
+    "ShirtTemplate",
+    "ShirtTemplateContent",
+    "PantsTemplate",
+    "PantsTemplateContent",
+    "Graphic",
+    "GraphicContent",
+    "ColorMap",
+    "ColorMapContent",
+)
 
 
 class AssetError(RuntimeError):
@@ -81,7 +98,7 @@ def ensure_raven(configured=""):
     npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
     if not npm:
         raise AssetError(
-            "Raven v0.3.0 is required. Install Node.js and re-run the Prism installer."
+f"Raven v{RAVEN_VERSION} is required. Install Node.js and re-run the Prism installer."
         )
     result = run_raven(npm, ["install", "-g", RAVEN_ARCHIVE], timeout=300)
     if result.returncode and os.name != "nt":
@@ -128,12 +145,30 @@ def enable_download(path):
 
 def read_public(identifier):
     url = f"https://assetdelivery.roblox.com/v1/asset/?id={identifier}"
-    request = urllib.request.Request(url, headers={"User-Agent": "Prism/0.3.0"})
+    request = urllib.request.Request(url, headers={"User-Agent": f"Prism/{config.version()}"})
     with urllib.request.urlopen(request, timeout=20) as response:
         data = response.read(MAX_BYTES + 1)
     if not data or len(data) > MAX_BYTES:
         raise AssetError("Empty asset or asset exceeds 128 MB")
     return data
+
+
+def image_reference(data):
+    """The image asset ID inside a Roblox asset document (Decal, Shirt, ...), or None."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as error:
+        raise AssetError("Invalid Roblox texture asset document") from error
+    for content in root.iter("Content"):
+        if content.get("name") in IMAGE_PROPERTIES:
+            match = re.search(
+                r"(?:rbxassetid://|[?&]id=)([1-9][0-9]*)",
+                content.findtext("url", ""),
+                re.IGNORECASE,
+            )
+            if match:
+                return match.group(1)
+    return None
 
 
 def valid_content(data):
@@ -272,7 +307,7 @@ class Resolver:
                             "Add Legacy Assets > Manage to your Raven key and re-run the Prism installer."
                         )
                     raise AssetError(
-                        "Raven could not download the asset. Check your key, asset access, and Raven v0.3.0."
+                        f"Raven could not download the asset. Check your key, asset access, and Raven v{RAVEN_VERSION}."
                     )
                 try:
                     info = json.loads(result.stdout)
@@ -290,6 +325,16 @@ class Resolver:
         finally:
             temporary.unlink(missing_ok=True)
 
+    def decal_image_id(self, identifier):
+        """The image ID behind an uploaded Decal, or None if Roblox hasn't exposed it yet."""
+        try:
+            data = self.download(identifier)
+            if not data.startswith((b"<roblox", b"<?xml")):
+                return None
+            return image_reference(data)
+        except (AssetError, OSError, ValueError):
+            return None
+
     def mesh(self, identifier):
         return self.decode_cached(identifier, "mesh", mesh_asset.decode)
 
@@ -306,33 +351,10 @@ class Resolver:
 
     def load_texture(self, identifier, data, depth):
         if data.startswith((b"<roblox", b"<?xml")):
-            try:
-                root = ET.fromstring(data)
-                for content in root.iter("Content"):
-                    if content.get("name") in (
-                        "Texture",
-                        "TextureContent",
-                        "TextureId",
-                        "TextureID",
-                        "ShirtTemplate",
-                        "ShirtTemplateContent",
-                        "PantsTemplate",
-                        "PantsTemplateContent",
-                        "Graphic",
-                        "GraphicContent",
-                        "ColorMap",
-                        "ColorMapContent",
-                    ):
-                        match = re.search(
-                            r"(?:rbxassetid://|[?&]id=)([1-9][0-9]*)",
-                            content.findtext("url", ""),
-                            re.IGNORECASE,
-                        )
-                        if match:
-                            return self.texture(match.group(1), depth + 1)
-            except ET.ParseError as error:
-                raise AssetError("Invalid Roblox texture asset document") from error
-            raise AssetError("Asset document has no downloadable image reference")
+            reference = image_reference(data)
+            if reference is None:
+                raise AssetError("Asset document has no downloadable image reference")
+            return self.texture(reference, depth + 1)
         import bpy
         import numpy as np
 

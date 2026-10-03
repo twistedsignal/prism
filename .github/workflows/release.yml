@@ -60,6 +60,18 @@ jobs:
       - name: Install Wally packages
         run: wally install
 
+      # Every install auto-updates from releases, so never publish a failing build.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python test dependencies
+        run: python -m pip install numpy
+
+      - name: Lint and test
+        run: ./scripts/test.bash
+
       - name: Build plugin
         run: ./scripts/build.bash
 
@@ -78,6 +90,17 @@ jobs:
           git tag "${{ steps.package.outputs.tag }}" "$GITHUB_SHA"
           git push origin "${{ steps.package.outputs.tag }}"
 
+      - name: Write release notes
+        run: |
+          # The plugin's update prompt shows these notes: use the release commit's message.
+          {
+            git log -1 --format=%s "$GITHUB_SHA"
+            body="$(git log -1 --format=%b "$GITHUB_SHA" | grep -v '^Co-Authored-By:' || true)"
+            if [[ -n "${body//[[:space:]]/}" ]]; then
+              printf '\n%s\n' "$body"
+            fi
+          } > build/release-notes.md
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -87,4 +110,4 @@ jobs:
             build/prism-backend.tar.gz \
             build/prism-backend.zip \
             --title "${{ steps.package.outputs.tag }}" \
-            --notes "Prism ${{ steps.package.outputs.tag }}"
+            --notes-file build/release-notes.md

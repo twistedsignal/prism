@@ -20,6 +20,8 @@ export type Props = {
 		port: () -> number,
 		setPort: (number) -> (),
 		connected: () -> boolean,
+		httpBlocked: () -> boolean,
+		lastError: () -> string?,
 		blender: () -> string?,
 		version: () -> string?,
 		refresh: () -> (),
@@ -99,7 +101,7 @@ const function SettingsPage(props: Props): ScrollingFrame
 
 		heading("Plugin", nextOrder()),
 		row(ToggleSetting({
-			name = "Auto-3d",
+			name = "Auto-3D",
 			index = 0,
 			labelWidth = 0.35,
 			description = "Show 3D while adjusting your model, then display the finished Blender preview automatically.",
@@ -211,21 +213,35 @@ const function SettingsPage(props: Props): ScrollingFrame
 			index = 1,
 			description = "Blender executable used for rendering. Re-run the installer to change it.",
 			value = text("blenderPath"),
-			onCommit = commit("blenderPath"),
+			readOnly = true,
 		})),
 		row(TextBoxSetting({
 			name = "Port",
 			index = 2,
-			description = "Port the backend listens on. Restart the backend after changing it.",
+			description = "Port the backend listens on. Changing it restarts the backend on the new port.",
 			value = function()
 				return tostring(props.bridge.port())
 			end,
 			onCommit = function(value)
-				const port = tonumber(value)
-				if port and port >= 1024 and port <= 65535 then
-					store.updateConfig({ port = math.floor(port) })
-					props.bridge.setPort(math.floor(port))
+				const parsed = tonumber(value)
+				if parsed == nil or parsed < 1024 or parsed > 65535 then
+					store.setNotice("The port must be a number from 1024 to 65535.", "error")
+					return
 				end
+				const port = math.floor(parsed)
+				if not props.bridge.connected() then
+					-- nothing to restart: point the plugin at a backend already on that port.
+					props.bridge.setPort(port)
+					return
+				end
+				store.changePort(port, function(ok, message)
+					if not ok then
+						store.setNotice(`Could not change the port: {message or "unknown error"}`, "error")
+						return
+					end
+					props.bridge.setPort(port)
+					store.setNotice(`Restarting the backend on port {port}…`, "info")
+				end)
 			end,
 		})),
 
@@ -282,8 +298,17 @@ const function SettingsPage(props: Props): ScrollingFrame
 						if props.bridge.connected() then
 							store.reload()
 							store.setNotice("Connected to the Prism backend.", "success")
+						elseif props.bridge.httpBlocked() then
+							store.setNotice(
+								"Studio blocked Prism's HTTP access. Allow 127.0.0.1 for Prism under Plugins → Manage Plugins.",
+								"error"
+							)
 						else
-							store.setNotice(`No backend on port {props.bridge.port()}.`, "error")
+							const detail = props.bridge.lastError()
+							store.setNotice(
+								`No backend on port {props.bridge.port()}.{if detail then ` ({detail})` else ""}`,
+								"error"
+							)
 						end
 					end)
 				end,

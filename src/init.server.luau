@@ -25,6 +25,8 @@ widget.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local bridge: Bridge.Bridge? = nil
 local unmount: (() -> ())? = nil
+-- the app stays mounted while hidden so models keep their settings, but pauses its work.
+const visible = vide.source(widget.Enabled)
 
 const function mount()
 	if unmount then
@@ -32,7 +34,7 @@ const function mount()
 	end
 	bridge = Bridge.create(plugin)
 	unmount = vide.mount(function()
-		return App({ plugin = plugin, bridge = bridge })
+		return App({ plugin = plugin, bridge = bridge, visible = visible })
 	end, widget)
 end
 
@@ -53,8 +55,12 @@ end)
 
 widget:GetPropertyChangedSignal("Enabled"):Connect(function()
 	button:SetActive(widget.Enabled)
+	visible(widget.Enabled)
 	if widget.Enabled then
 		mount()
+	end
+	if bridge then
+		bridge.setActive(widget.Enabled)
 	end
 end)
 

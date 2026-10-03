@@ -36,7 +36,14 @@ export type UpdateInfo = {
 	error: string?,
 }
 export type UpdateState = "idle" | "updating" | "restart"
-export type UploadResult = { name: string, assetId: string?, moderation: string?, path: string?, error: string? }
+export type UploadResult = {
+	name: string,
+	assetId: string?,
+	imageId: string?,
+	moderation: string?,
+	path: string?,
+	error: string?,
+}
 
 const function cloneSettings(settings: Types.Settings): Types.Settings
 	return table.clone(settings)
@@ -84,6 +91,8 @@ const function create(plugin: Plugin, bridge: Bridge)
 	local previewImage: EditableImage? = nil
 	const payloads: { [string]: string } = {}
 	const recoveryNeeded: { [string]: boolean } = {}
+	-- settings of deselected instances, restored when they're selected again.
+	const rememberedSettings: { [Instance]: Types.Settings } = setmetatable({}, { __mode = "k" }) :: any
 	local destroyed = false
 
 	-- ---------------------------------------------------------------
@@ -293,6 +302,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 
 	const function destroyModels(list: { Types.Model })
 		for _, model in list do
+			rememberedSettings[model.instance] = model.settings()
 			payloads[model.id] = nil
 			recoveryNeeded[model.id] = nil
 			thumbnailTokens[model.id] = nil
@@ -345,7 +355,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 				sceneId = source(nil :: string?),
 				state = source("serializing" :: Types.ModelState),
 				warning = source(nil :: string?),
-				settings = source(cloneSettings(initial)),
+				settings = source(cloneSettings(rememberedSettings[root] or initial)),
 				assetId = source(nil :: string?),
 				thumbnail = nil,
 				thumbnailVersion = source(0),
@@ -557,6 +567,20 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end)
 	end
 
+	-- saves the port, then restarts the backend so it listens there.
+	const function changePort(port: number, onDone: (ok: boolean, message: string?) -> ())
+		task.spawn(function()
+			const saved = bridge.request("PUT", "/config", { port = port })
+			if not saved.ok then
+				onDone(false, saved.error or "Could not save the port")
+				return
+			end
+			config(saved.body)
+			const restarted = bridge.request("POST", "/restart")
+			onDone(restarted.ok, restarted.error)
+		end)
+	end
+
 	const function pickFolder()
 		task.spawn(function()
 			const response = bridge.request("POST", "/pick-folder")
@@ -624,7 +648,13 @@ const function create(plugin: Plugin, bridge: Bridge)
 				sendScene(model)
 			end
 			if model.sceneId() then
-				table.insert(result, { sceneId = model.sceneId(), name = model.name, settings = model.settings() })
+				table.insert(result, {
+					sceneId = model.sceneId(),
+					name = model.name,
+					settings = model.settings(),
+					-- {index} in file names is the model's position in the list.
+					index = table.find(models(), model),
+				})
 				table.insert(included, model)
 			end
 		end
@@ -688,7 +718,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 			for index, result in results do
 				const model = included[index]
 				if model and result.assetId then
-					model.assetId(result.assetId)
+					model.assetId(result.imageId or result.assetId)
 				end
 			end
 			onDone(results)
@@ -805,6 +835,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		savePreset = savePreset,
 		deletePreset = deletePreset,
 		updateConfig = updateConfig,
+		changePort = changePort,
 		pickFolder = pickFolder,
 		exportModels = exportModels,
 		uploadModels = uploadModels,

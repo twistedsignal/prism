@@ -12,7 +12,8 @@ export type Props = {
 	description: string?,
 	placeholderText: string?,
 	value: () -> string,
-	onCommit: (string) -> (),
+	onCommit: ((string) -> ())?,
+	readOnly: boolean?,
 	button: { text: string, activated: () -> () }?,
 }
 
@@ -36,16 +37,17 @@ const function TextBoxSetting(props: Props): Frame
 		BorderSizePixel = 0,
 		ClearTextOnFocus = false,
 		ClipsDescendants = true,
+		TextEditable = not props.readOnly,
 		Text = props.value,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Font = Enum.Font.SourceSans,
 		TextSize = 15,
-		TextColor3 = Theme.TEXT,
+		TextColor3 = if props.readOnly then Theme.MUTED else Theme.TEXT,
 		PlaceholderText = props.placeholderText or "",
 		PlaceholderColor3 = Theme.SUBTLE,
 		FocusLost = function()
-			if box.Text ~= props.value() then
+			if props.onCommit and box.Text ~= props.value() then
 				props.onCommit(box.Text)
 			end
 		end,

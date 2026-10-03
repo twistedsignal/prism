@@ -24,6 +24,7 @@ const FOOTER_HEIGHT = 62
 export type Props = {
 	plugin: Plugin,
 	bridge: any,
+	visible: () -> boolean,
 }
 
 const function App(props: Props): Frame
@@ -38,7 +39,8 @@ const function App(props: Props): Frame
 		selectionToken += 1
 		const token = selectionToken
 		task.delay(0.15, function()
-			if token == selectionToken then
+			-- while hidden, selecting elsewhere in studio must not read or drop models.
+			if token == selectionToken and vide.untrack(props.visible) then
 				store.useSelection(Serializer.getRoots(Selection:Get()))
 			end
 		end)
@@ -47,7 +49,12 @@ const function App(props: Props): Frame
 	cleanup(function()
 		selectionToken += 1
 	end)
-	importSelection()
+	-- runs once on mount and again whenever the widget is reopened.
+	effect(function()
+		if props.visible() then
+			vide.untrack(importSelection)
+		end
+	end)
 
 	-- the overlay must exist before any component that places hover text or popups in it.
 	const overlay = new("Frame")({
@@ -85,7 +92,9 @@ const function App(props: Props): Frame
 				BackgroundTransparency = 1,
 				Text = function()
 					if not bridge.connected() then
-						return "Bridge offline"
+						return if bridge.httpBlocked()
+							then "HTTP access blocked"
+							else "Bridge offline"
 					end
 					return `Blender {string.match(bridge.blender() or "", "^[%d%.]+") or "?"}`
 				end,

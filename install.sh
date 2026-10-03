@@ -15,7 +15,8 @@ set -euo pipefail
 main() {
 	local repo="twistedsignal/prism"
 	local credentials_url="https://create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab"
-	local raven_tarball="https://github.com/twistedsignal/raven/archive/refs/tags/v0.3.0.tar.gz"
+	local raven_version="0.3.0"
+	local raven_tarball="https://github.com/twistedsignal/raven/archive/refs/tags/v$raven_version.tar.gz"
 	local port=47821
 
 	if [[ -t 1 ]]; then
@@ -70,11 +71,67 @@ main() {
 		*) fail "Unsupported system $(uname -s). On Windows, use install.ps1." ;;
 	esac
 
-	local install_dir
+	local install_dir cache_dir config_dir
 	if [[ "$os" == macos ]]; then
 		install_dir="$HOME/Library/Application Support/Prism"
+		cache_dir="$HOME/Library/Caches/Prism"
+		config_dir="${PRISM_CONFIG_DIR:-$HOME/Library/Application Support/Prism}"
 	else
 		install_dir="${XDG_DATA_HOME:-$HOME/.local/share}/prism"
+		cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/prism"
+		config_dir="${PRISM_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/prism}"
+	fi
+
+	# ------------------------------------------------------------
+	# Studio plugin folders
+	# ------------------------------------------------------------
+
+	plugin_dirs() {
+		if [[ -n "${PRISM_PLUGINS_DIR:-}" ]]; then
+			printf '%s\n' "$PRISM_PLUGINS_DIR"
+			return
+		fi
+		if [[ "$os" == macos ]]; then
+			printf '%s\n' "$HOME/Documents/Roblox/Plugins"
+			return
+		fi
+		local roblox
+		for roblox in \
+			"$HOME"/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/*/drive_c/users/*/AppData/Local/Roblox \
+			"${XDG_DATA_HOME:-$HOME/.local/share}"/vinegar/prefixes/*/drive_c/users/*/AppData/Local/Roblox; do
+			[[ -d "$roblox" ]] && printf '%s\n' "$roblox/Plugins"
+		done
+	}
+
+	# ------------------------------------------------------------
+	# Uninstall
+	# ------------------------------------------------------------
+
+	if [[ "$uninstall" == true ]]; then
+		printf '%sPrism Uninstall...%s\n' "$bold" "$reset"
+		# Remove the startup entry directly so this works without Blender or a network.
+		step "Removing startup script..."
+		if [[ "$os" == macos ]]; then
+			local label
+			for label in dev.ivadsiuls.prism com.ivadsiuls.prism; do
+				launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/$label.plist" >/dev/null 2>&1 || true
+				rm -f "$HOME/Library/LaunchAgents/$label.plist"
+			done
+		elif command -v systemctl >/dev/null 2>&1; then
+			systemctl --user disable --now prism.service >/dev/null 2>&1 || true
+			rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/prism.service"
+			systemctl --user daemon-reload >/dev/null 2>&1 || true
+		fi
+		step "Removing backend..."
+		rm -rf "$install_dir/backend" "$install_dir/.backend-previous" "$cache_dir"
+		step "Removing local Roblox plugin..."
+		local dir
+		while IFS= read -r dir; do
+			[[ -n "$dir" ]] && rm -f "$dir/Prism.rbxm"
+		done < <(plugin_dirs)
+		echo
+		ok "Prism has been uninstalled. Raven, your settings and presets were left in place."
+		return 0
 	fi
 
 	# ------------------------------------------------------------
@@ -92,7 +149,7 @@ main() {
 	fi
 	version="${version#v}"
 
-	printf '%sPrism v%s %s...%s\n' "$bold" "$version" "$([[ "$uninstall" == true ]] && echo Uninstall || echo Installation)" "$reset"
+	printf '%sPrism v%s Installation...%s\n' "$bold" "$version" "$reset"
 
 	# ------------------------------------------------------------
 	# Blender
@@ -123,29 +180,23 @@ main() {
 	}
 
 	if ! find_blender; then
-		if [[ "$uninstall" == true ]]; then
-			warn "Blender was not found, so the startup entry can't be removed automatically."
-		else
-			printf '\n%sYou do not have Blender installed! Please install it.%s\n' "$red" "$reset"
-			echo "Download it from https://www.blender.org/download/ and run this installer again."
-			exit 1
-		fi
+		printf '\n%sYou do not have Blender installed! Please install it.%s\n' "$red" "$reset"
+		echo "Download it from https://www.blender.org/download/ and run this installer again."
+		exit 1
 	fi
 
-	if [[ "$uninstall" == false ]]; then
-		local blender_version major minor
-		blender_version="$("${blender[@]}" --version 2>/dev/null | sed -nE 's/^Blender ([0-9]+)\.([0-9]+).*/\1.\2/p' | head -n 1)"
-		major="${blender_version%%.*}"
-		minor="${blender_version#*.}"
-		if [[ -z "$blender_version" ]]; then
-			fail "Could not run Blender (${blender[*]}). Set PRISM_BLENDER to its path and try again."
-		fi
-		if ((major < 4 || (major == 4 && minor < 2))); then
-			fail "Prism needs Blender 4.2 or newer; found $blender_version. Please update Blender."
-		fi
-		echo
-		ok "Blender is installed, continuing..."
+	local blender_version major minor
+	blender_version="$("${blender[@]}" --version 2>/dev/null | sed -nE 's/^Blender ([0-9]+)\.([0-9]+).*/\1.\2/p' | head -n 1)"
+	major="${blender_version%%.*}"
+	minor="${blender_version#*.}"
+	if [[ -z "$blender_version" ]]; then
+		fail "Could not run Blender (${blender[*]}). Set PRISM_BLENDER to its path and try again."
 	fi
+	if ((major < 4 || (major == 4 && minor < 2))); then
+		fail "Prism needs Blender 4.2 or newer; found $blender_version. Please update Blender."
+	fi
+	echo
+	ok "Blender is installed, continuing..."
 
 	# Runs Python with stdin, using python3 if available and Blender's bundled Python otherwise.
 	have_python() {
@@ -162,49 +213,6 @@ main() {
 				sed -n 's/^PRISM://p'
 		fi
 	}
-
-	# ------------------------------------------------------------
-	# Studio plugin folders
-	# ------------------------------------------------------------
-
-	plugin_dirs() {
-		if [[ -n "${PRISM_PLUGINS_DIR:-}" ]]; then
-			printf '%s\n' "$PRISM_PLUGINS_DIR"
-			return
-		fi
-		if [[ "$os" == macos ]]; then
-			printf '%s\n' "$HOME/Documents/Roblox/Plugins"
-			return
-		fi
-		local roblox
-		for roblox in \
-			"$HOME"/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/*/drive_c/users/*/AppData/Local/Roblox \
-			"${XDG_DATA_HOME:-$HOME/.local/share}"/vinegar/prefixes/*/drive_c/users/*/AppData/Local/Roblox; do
-			[[ -d "$roblox" ]] && printf '%s\n' "$roblox/Plugins"
-		done
-	}
-
-	# ------------------------------------------------------------
-	# Uninstall
-	# ------------------------------------------------------------
-
-	if [[ "$uninstall" == true ]]; then
-		step "Removing startup script..."
-		if [[ ${#blender[@]} -gt 0 && -f "$install_dir/backend/main.py" ]]; then
-			"${blender[@]}" --background --factory-startup --python "$install_dir/backend/main.py" -- uninstall >/dev/null 2>&1 ||
-				warn "Could not remove the startup entry."
-		fi
-		step "Removing backend..."
-		rm -rf "$install_dir/backend"
-		step "Removing local Roblox plugin..."
-		local dir
-		while IFS= read -r dir; do
-			[[ -n "$dir" ]] && rm -f "$dir/Prism.rbxm"
-		done < <(plugin_dirs)
-		echo
-		ok "Prism has been uninstalled. Raven, your settings and presets were left in place."
-		return 0
-	fi
 
 	# ------------------------------------------------------------
 	# Raven
@@ -226,7 +234,7 @@ main() {
 	fi
 	if [[ -z "$raven" ]] || ! "$raven" asset download --help 2>/dev/null | grep -- "--output" >/dev/null; then
 		echo
-		printf '%sInstalling Raven v0.3.0 asset download support...%s\n' "$yellow" "$reset"
+		printf '%sInstalling Raven v%s asset download support...%s\n' "$yellow" "$raven_version" "$reset"
 		if ! npm install -g "$raven_tarball" >/dev/null 2>&1; then
 			# System Node installs often need root for -g; fall back to a user prefix.
 			npm install -g --prefix "$HOME/.local" "$raven_tarball" >/dev/null ||
@@ -438,7 +446,7 @@ print(("PRISM:" if "bpy" in sys.modules else "") + key)
 	# Startup
 	# ------------------------------------------------------------
 
-	step "Installing startup script.."
+	step "Installing startup script..."
 	local -a install_args=(install --raven "$raven")
 	if [[ -n "$owner_id" ]]; then
 		install_args+=(--creator "user:$owner_id")
@@ -446,8 +454,29 @@ print(("PRISM:" if "bpy" in sys.modules else "") + key)
 	if [[ "${blender[0]}" != flatpak ]]; then
 		install_args+=(--blender "${blender[0]}")
 	fi
-	"${blender[@]}" --background --factory-startup --python "$install_dir/backend/main.py" -- "${install_args[@]}" >/dev/null 2>&1 ||
+	local startup_log="$staging/startup.log"
+	if ! "${blender[@]}" --background --factory-startup --python "$install_dir/backend/main.py" -- "${install_args[@]}" >"$startup_log" 2>&1; then
+		# Show why it failed (no systemd user session, launchctl errors, ...).
+		grep -Ev '^(Blender |Read prefs|$)' "$startup_log" | tail -n 15 >&2 || true
+		if [[ "$os" == linux ]] && ! systemctl --user show-environment >/dev/null 2>&1; then
+			fail "Prism starts at login through a systemd user service, but no systemd user session is available."
+		fi
 		fail "Could not install the startup script. Run the installer again or check your Blender install."
+	fi
+
+	# A previous install may have changed the port in Settings.
+	local configured_port
+	configured_port="$(printf '%s' "$config_dir/config.json" | run_python '
+import json, sys
+try:
+    port = json.load(open(sys.stdin.read().strip(), encoding="utf-8")).get("port")
+except Exception:
+    port = None
+print(("PRISM:" if "bpy" in sys.modules else "") + (str(port) if isinstance(port, int) else ""))
+')"
+	if [[ "$configured_port" =~ ^[0-9]+$ ]] && ((configured_port >= 1024 && configured_port <= 65535)); then
+		port="$configured_port"
+	fi
 
 	local started=false
 	for _ in $(seq 1 30); do

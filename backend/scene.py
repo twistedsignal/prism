@@ -493,7 +493,11 @@ class SceneCache:
         staging = self.root / f".{identifier}.tmp"
         shutil.rmtree(staging, ignore_errors=True)
         try:
-            warnings = list(dict.fromkeys(recovery_warnings + payload.get("warnings", []) + build(payload, staging)))
+            plugin_warnings = payload.get("warnings")
+            if not isinstance(plugin_warnings, list):
+                plugin_warnings = []
+            plugin_warnings = [warning for warning in plugin_warnings if isinstance(warning, str)]
+            warnings = list(dict.fromkeys(recovery_warnings + plugin_warnings + build(payload, staging)))
             (staging / "warnings.json").write_text(json.dumps(warnings), encoding="utf-8")
             (staging / "incomplete").write_text("1" if incomplete else "0", encoding="utf-8")
             staging.replace(directory)

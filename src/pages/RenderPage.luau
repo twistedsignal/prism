@@ -143,12 +143,13 @@ const function showUploadResults(results: { Store.UploadResult })
 						})
 						else new("TextBox")({
 							Position = UDim2.fromOffset(8, 22),
-							Size = UDim2.new(1, -110, 0, 22),
+							Size = UDim2.new(1, -138, 0, 22),
 							BackgroundColor3 = Theme.INPUT,
 							BorderSizePixel = 0,
 							ClearTextOnFocus = false,
 							TextEditable = false,
-							Text = `rbxassetid://{result.assetId}`,
+							-- ImageLabels need the image ID; fall back to the Decal if Roblox hasn't exposed it.
+							Text = `rbxassetid://{result.imageId or result.assetId}`,
 							TextXAlignment = Enum.TextXAlignment.Left,
 							TextColor3 = Theme.TEXT,
 							Font = Enum.Font.Code,
@@ -163,9 +164,9 @@ const function showUploadResults(results: { Store.UploadResult })
 						else new("TextLabel")({
 							AnchorPoint = Vector2.new(1, 0),
 							Position = UDim2.new(1, -8, 0, 22),
-							Size = UDim2.fromOffset(92, 22),
+							Size = UDim2.fromOffset(120, 22),
 							BackgroundTransparency = 1,
-							Text = result.moderation or "",
+							Text = if result.imageId then result.moderation or "" else `Decal · {result.moderation or ""}`,
 							TextXAlignment = Enum.TextXAlignment.Right,
 							TextColor3 = if result.moderation == "Approved" then Theme.GREEN else Theme.YELLOW,
 							Font = Enum.Font.SourceSans,

@@ -34,16 +34,18 @@ curl -fsSL https://raw.githubusercontent.com/twistedsignal/prism/main/install.sh
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1))) -Uninstall
 ```
 
-Uninstalling leaves raven, your settings and your presets in place.
+Uninstalling removes the startup entry, backend, cache and plugin. It doesn't need Blender or a network connection, and it leaves raven, your settings and your presets in place.
 
 ## Using it
 
-1. Select one or more models, tools, accessories or parts in Studio. Prism adds them automatically and keeps previously added models and their settings.
+1. Select one or more models, tools, accessories or parts in Studio. Prism shows a card for each selected model. Deselected models drop out of the list, but Prism remembers their settings and restores them when you select them again. Selection changes are ignored while the Prism window is closed.
 2. Click a card to pick a model. Edit **This model** only, or **All** models at once.
 3. Use **3D** for an instant Studio viewport, or **Blender** for the real render. Drag the preview to orbit and scroll to zoom. These gestures update the actual camera settings for the current editing scope. A loading circle shows when Prism is reading or rendering.
-4. **Render** saves PNGs to your output folder. **Upload** sends them to Roblox and shows the asset ids. **Open folder** opens the output folder.
+4. **Render** saves PNGs to your output folder. **Upload** sends them to Roblox as Decals and shows the image ids to use in `ImageLabel.Image`. **Open folder** opens the output folder.
 
-Presets are saved on your computer, so they work in every game. The **Settings** tab holds the output folder, render sizes, quality and the default upload creator.
+Presets are saved on your computer, so they work in every game. The **Settings** tab holds the output folder, file names, render sizes, quality, the default upload creator and the backend port. Changing the port restarts the backend on the new port.
+
+If the header says **HTTP access blocked**, allow Prism to reach `127.0.0.1` under **Plugins → Manage Plugins**.
 
 ### Limitations
 
@@ -62,21 +64,22 @@ Studio plugin ──HTTP 127.0.0.1:47821──▶ backend (runs inside Blender)
 
 The HTTP backend runs in plain Python, using Blender's bundled interpreter when installed. It starts Blender only when scene preparation or rendering needs it, keeps the worker warm while you work, and shuts it down after 60 seconds without a scene or render job. The next job starts a fresh worker automatically. Settings, uploads and update checks keep working while Blender is stopped.
 
-It only listens on `127.0.0.1` and rejects browser requests. It starts at login through a systemd user service on Linux, a LaunchAgent on macOS, or a Task Scheduler task on Windows. Existing installations migrate their startup entry on the first launch after updating to v0.5.0.
+It only listens on `127.0.0.1` and rejects browser requests. It starts at login through a systemd user service on Linux, a LaunchAgent on macOS, or a Task Scheduler task on Windows.
 
 | File | Location |
 |---|---|
 | Settings and presets | `~/.config/prism` · `~/Library/Application Support/Prism` · `%APPDATA%\Prism` |
 | Backend | `~/.local/share/prism` · `~/Library/Application Support/Prism` · `%LOCALAPPDATA%\Prism` |
+| Cache | `~/.cache/prism` · `~/Library/Caches/Prism` · `%LOCALAPPDATA%\Prism\cache` |
 | Logs | `journalctl --user -u prism` · `~/Library/Logs/Prism.log` · `%LOCALAPPDATA%\Prism\prism.log` |
 
-## Upgrading from v0.2.0
+### Rendering details
 
-Edit your existing personal API key in the Creator Dashboard and add **Legacy Assets > Manage** (`legacy-asset:manage`). Keep **Assets > Read and Write** enabled. Prism's updater upgrades Raven automatically and enables its download command; you do not need to replace your key. If the key is missing permissions, rendering uses placeholders with a warning. After fixing permissions, select the model again to retry recovery.
+Your Raven API key needs **Assets > Read and Write** and **Legacy Assets > Manage** (`legacy-asset:manage`); the installer checks both. If the key is missing permissions, rendering uses placeholders with a warning. After fixing permissions, select the model again to retry recovery.
 
 Completed renders use a 64 MB memory cache in the Blender worker, shared by previews, exports and uploads. Changing a model, camera, render settings, output size or antialiasing selects a different cache entry. Worker shutdown releases this cache and imported models; prepared scenes remain on disk for the next worker.
 
-Auto-3d is enabled by default in the plugin's Settings tab. It hides the 3D/Blender picker, shows the Studio viewport immediately when you edit the camera or model settings, and switches to the matching Blender preview when rendering finishes. Turn it off to choose either view manually. The preference is saved per Studio user.
+Auto-3D is enabled by default in the plugin's Settings tab. It hides the 3D/Blender picker, shows the Studio viewport immediately when you edit the camera or model settings, and switches to the matching Blender preview when rendering finishes. Turn it off to choose either view manually. The preference is saved per Studio user.
 
 Image effects reuse the rendered image, so saturation, contrast, brightness, outline, shadow and glow edits skip Blender entirely. Silhouettes and blurred masks are reused when only colors, opacity or shadow offsets change. Cavity angle changes reuse the color, base and normals passes; turning cavity off reuses the base pass. Intermediate PNGs use no compression. These additional worker caches are bounded to 112 MiB and released when the worker shuts down.
 
@@ -93,17 +96,11 @@ rokit install
 wally install
 scripts/build.bash   # build/Prism.rbxm
 scripts/dev.bash     # build into your Studio Plugins folder and rebuild on change
-selene src
-lune run tests/selection.luau
-lune run tests/model-cards.luau
-lune run tests/auto3d.luau
-lune run tests/drag.luau
-lune run tests/camera.luau
-lune run tests/preview-input.luau
-lune run tests/asset-routing.luau
-python3 -m unittest discover -s tests -p 'test_*.py'
+scripts/test.bash    # selene, every Luau and Python test, installer checks
 PRISM_TEST_BLENDER=/path/to/blender python3 -m unittest discover -s tests -p 'test_worker.py'
 ```
+
+The Python tests need `numpy`. CI runs `scripts/test.bash` on every push and pull request, and releases only publish when it passes.
 
 `dev.bash` finds the Plugins folder of a Vinegar flatpak or native prefix, macOS or Windows. Set `PRISM_PLUGINS_DIR` to override it.
 
@@ -127,4 +124,8 @@ To test the installer against a local checkout, build the plugin first, then run
 PRISM_SOURCE="$PWD" bash install.sh
 ```
 
-Releases are published by `.github/workflows/release.yml` when the version in `wally.toml` changes.
+Releases are published by `.github/workflows/release.yml` when the version in `wally.toml` changes. The release commit's message becomes the release notes shown in the plugin's update prompt.
+
+## License
+
+Prism is released under the [MIT License](LICENSE). The meshes in `backend/clothing/` and `backend/primitives/` come from Roblox Studio and belong to Roblox Corporation.

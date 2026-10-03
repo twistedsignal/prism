@@ -21,7 +21,8 @@ function Invoke-PrismInstaller {
 
 	$repo = "twistedsignal/prism"
 	$credentialsUrl = "https://create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab"
-	$ravenTarball = "https://github.com/twistedsignal/raven/archive/refs/tags/v0.3.0.tar.gz"
+	$ravenVersion = "0.3.0"
+	$ravenTarball = "https://github.com/twistedsignal/raven/archive/refs/tags/v$ravenVersion.tar.gz"
 	$port = 47821
 	$installDir = Join-Path $env:LOCALAPPDATA "Prism"
 	$pluginsDir = if ($env:PRISM_PLUGINS_DIR) { $env:PRISM_PLUGINS_DIR } else { Join-Path $env:LOCALAPPDATA "Roblox\Plugins" }
@@ -33,6 +34,27 @@ function Invoke-PrismInstaller {
 		Write-Host ""
 		Write-Host $Text -ForegroundColor Red
 		throw "Prism installation stopped."
+	}
+
+	# ------------------------------------------------------------
+	# Uninstall
+	# ------------------------------------------------------------
+
+	# Remove the startup entry directly so this works without Blender or a network.
+	if ($Remove) {
+		Write-Host "Prism Uninstall..."
+		Write-Step "Removing startup script..."
+		& schtasks /End /TN Prism *> $null
+		& schtasks /Delete /TN Prism /F *> $null
+		Write-Step "Removing backend..."
+		foreach ($folder in @("backend", ".backend-previous", "cache")) {
+			Remove-Item -Recurse -Force (Join-Path $installDir $folder) -ErrorAction SilentlyContinue
+		}
+		Write-Step "Removing local Roblox plugin..."
+		Remove-Item -Force (Join-Path $pluginsDir "Prism.rbxm") -ErrorAction SilentlyContinue
+		Write-Host ""
+		Write-Ok "Prism has been uninstalled. Raven, your settings and presets were left in place."
+		return
 	}
 
 	# ------------------------------------------------------------
@@ -54,8 +76,7 @@ function Invoke-PrismInstaller {
 	}
 	$version = $version.TrimStart("v")
 
-	$action = if ($Remove) { "Uninstall" } else { "Installation" }
-	Write-Host "Prism v$version $action..."
+	Write-Host "Prism v$version Installation..."
 
 	# ------------------------------------------------------------
 	# Blender
@@ -84,48 +105,23 @@ function Invoke-PrismInstaller {
 	}
 
 	if (-not $blender) {
-		if ($Remove) {
-			Write-Warn "Blender was not found, so the startup entry can't be removed automatically."
-		} else {
-			Write-Host ""
-			Write-Host "You do not have Blender installed! Please install it." -ForegroundColor Red
-			Write-Host "Download it from https://www.blender.org/download/ and run this installer again."
-			return
-		}
-	}
-
-	if (-not $Remove) {
-		$versionLine = (& $blender --version 2>$null | Select-Object -First 1)
-		if ($versionLine -notmatch '^Blender (\d+)\.(\d+)') {
-			Stop-Install "Could not run Blender ($blender). Set PRISM_BLENDER to blender.exe and try again."
-		}
-		$major = [int]$Matches[1]
-		$minor = [int]$Matches[2]
-		if ($major -lt 4 -or ($major -eq 4 -and $minor -lt 2)) {
-			Stop-Install "Prism needs Blender 4.2 or newer; found $major.$minor. Please update Blender."
-		}
 		Write-Host ""
-		Write-Ok "Blender is installed, continuing..."
-	}
-
-	# ------------------------------------------------------------
-	# Uninstall
-	# ------------------------------------------------------------
-
-	if ($Remove) {
-		Write-Step "Removing startup script..."
-		$main = Join-Path $installDir "backend\main.py"
-		if ($blender -and (Test-Path $main)) {
-			& $blender --background --factory-startup --python $main -- uninstall *> $null
-		}
-		Write-Step "Removing backend..."
-		Remove-Item -Recurse -Force (Join-Path $installDir "backend") -ErrorAction SilentlyContinue
-		Write-Step "Removing local Roblox plugin..."
-		Remove-Item -Force (Join-Path $pluginsDir "Prism.rbxm") -ErrorAction SilentlyContinue
-		Write-Host ""
-		Write-Ok "Prism has been uninstalled. Raven, your settings and presets were left in place."
+		Write-Host "You do not have Blender installed! Please install it." -ForegroundColor Red
+		Write-Host "Download it from https://www.blender.org/download/ and run this installer again."
 		return
 	}
+
+	$versionLine = (& $blender --version 2>$null | Select-Object -First 1)
+	if ($versionLine -notmatch '^Blender (\d+)\.(\d+)') {
+		Stop-Install "Could not run Blender ($blender). Set PRISM_BLENDER to blender.exe and try again."
+	}
+	$major = [int]$Matches[1]
+	$minor = [int]$Matches[2]
+	if ($major -lt 4 -or ($major -eq 4 -and $minor -lt 2)) {
+		Stop-Install "Prism needs Blender 4.2 or newer; found $major.$minor. Please update Blender."
+	}
+	Write-Host ""
+	Write-Ok "Blender is installed, continuing..."
 
 	# ------------------------------------------------------------
 	# Raven
@@ -151,7 +147,7 @@ function Invoke-PrismInstaller {
 	$raven = Find-Raven
 	if (-not $raven -or -not ((& $raven asset download --help 2>$null) -match "--output")) {
 		Write-Host ""
-		Write-Host "Installing Raven v0.3.0 asset download support..." -ForegroundColor Yellow
+		Write-Host "Installing Raven v$ravenVersion asset download support..." -ForegroundColor Yellow
 		& npm install -g $ravenTarball *> $null
 		if ($LASTEXITCODE -ne 0) { Stop-Install "Could not install Raven with npm." }
 		$raven = Find-Raven
@@ -313,14 +309,29 @@ function Invoke-PrismInstaller {
 		# Startup
 		# ------------------------------------------------------------
 
-		Write-Step "Installing startup script.."
+		Write-Step "Installing startup script..."
 		$arguments = @("--background", "--factory-startup", "--python", (Join-Path $installDir "backend\main.py"), "--",
 			"install", "--raven", $raven, "--blender", $blender)
 		if ($keyInfo -and $keyInfo.OwnerId) { $arguments += @("--creator", "user:$($keyInfo.OwnerId)") }
-		& $blender @arguments *> $null
+		$startupLog = Join-Path $staging "startup.log"
+		& $blender @arguments *> $startupLog
 		if ($LASTEXITCODE -ne 0) {
+			# Show why it failed, e.g. schtasks errors.
+			Get-Content -LiteralPath $startupLog -ErrorAction SilentlyContinue |
+				Where-Object { $_ -and $_ -notmatch '^(Blender |Read prefs)' } |
+				Select-Object -Last 15 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
 			Stop-Install "Could not install the startup script. Run the installer again or check your Blender install."
 		}
+
+		# A previous install may have changed the port in Settings.
+		$configFile = Join-Path $env:APPDATA "Prism\config.json"
+		if ($env:PRISM_CONFIG_DIR) { $configFile = Join-Path $env:PRISM_CONFIG_DIR "config.json" }
+		try {
+			$configuredPort = (Get-Content -Raw -LiteralPath $configFile | ConvertFrom-Json).port
+			if ($configuredPort -is [int] -or $configuredPort -is [long]) {
+				if ($configuredPort -ge 1024 -and $configuredPort -le 65535) { $port = [int]$configuredPort }
+			}
+		} catch {}
 
 		$started = $false
 		for ($i = 0; $i -lt 30; $i++) {

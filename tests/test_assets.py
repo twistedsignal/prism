@@ -206,6 +206,20 @@ class ResolverTests(unittest.TestCase):
         self.assertNotIn("texture", resolved["parts"][0])
         self.assertEqual(len(warnings), 2)
 
+    def test_decal_image_id(self):
+        decal = (
+            b'<roblox version="4"><Item class="Decal"><Properties>'
+            b'<Content name="Texture"><url>http://www.roblox.com/asset/?id=456</url></Content>'
+            b"</Properties></Item></roblox>"
+        )
+        with patch.object(assets, "read_public", return_value=decal):
+            self.assertEqual(self.resolver.decal_image_id("123"), "456")
+        with (
+            patch.object(assets, "read_public", side_effect=OSError("403")),
+            patch.object(assets.uploader, "find_raven", return_value=None),
+        ):
+            self.assertIsNone(self.resolver.decal_image_id("789"))
+
     def test_invalid_id(self):
         for identifier in ("../123", "0", 123):
             with self.assertRaises(assets.AssetError):

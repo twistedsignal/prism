@@ -17,13 +17,19 @@ export type Response = {
 export type Bridge = {
 	port: (number?) -> number,
 	connected: () -> boolean,
+	lastError: () -> string?,
+	httpBlocked: () -> boolean,
 	blender: () -> string?,
 	version: () -> string?,
 	request: (method: string, path: string, body: any?) -> Response,
 	setPort: (number) -> (),
+	setActive: (boolean) -> (),
 	refresh: () -> (),
 	destroy: () -> (),
 }
+
+-- studio's errors when the user denied this plugin http access.
+const BLOCKED_PATTERNS = { "permission", "not allowed", "denied", "not enabled" }
 
 const function create(plugin: Plugin): Bridge
 	const savedPort = tonumber(plugin:GetSetting(PORT_SETTING))
@@ -31,7 +37,11 @@ const function create(plugin: Plugin): Bridge
 	const connected = vide.source(false)
 	const blender = vide.source(nil :: string?)
 	const version = vide.source(nil :: string?)
+	const lastError = vide.source(nil :: string?)
 	local running = true
+	-- only poll while the widget is open.
+	local active = true
+	local wake: thread? = nil
 
 	const function request(method: string, path: string, body: any?): Response
 		const options: { [string]: any } = {
@@ -50,7 +60,13 @@ const function create(plugin: Plugin): Bridge
 		end)
 		if not ok then
 			connected(false)
+			if lastError() ~= tostring(result) then
+				lastError(tostring(result))
+			end
 			return { ok = false, status = 0, body = nil, error = tostring(result) }
+		end
+		if lastError() ~= nil then
+			lastError(nil)
 		end
 		local decoded = nil
 		if result.Body ~= "" then
@@ -82,14 +98,37 @@ const function create(plugin: Plugin): Bridge
 
 	task.spawn(function()
 		while running do
-			refresh()
-			task.wait(POLL_INTERVAL)
+			if active then
+				refresh()
+				task.wait(POLL_INTERVAL)
+			else
+				wake = coroutine.running()
+				coroutine.yield()
+			end
 		end
 	end)
+
+	const function resume()
+		const thread = wake
+		wake = nil
+		if thread then
+			task.spawn(thread)
+		end
+	end
 
 	return {
 		port = port,
 		connected = connected,
+		lastError = lastError,
+		httpBlocked = function(): boolean
+			const message = string.lower(lastError() or "")
+			for _, pattern in BLOCKED_PATTERNS do
+				if string.find(message, pattern, 1, true) then
+					return true
+				end
+			end
+			return false
+		end,
 		blender = blender,
 		version = version,
 		request = request,
@@ -98,9 +137,16 @@ const function create(plugin: Plugin): Bridge
 			plugin:SetSetting(PORT_SETTING, value)
 			task.spawn(refresh)
 		end,
+		setActive = function(value: boolean)
+			active = value
+			if value then
+				resume()
+			end
+		end,
 		refresh = refresh,
 		destroy = function()
 			running = false
+			resume()
 		end,
 	}
 end

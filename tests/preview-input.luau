@@ -63,7 +63,7 @@ print('Preview mouse drag and wheel checks passed')
 
 assert(visibility[1](), "Manual view picker should be visible")
 automatic = true
-assert(not visibility[1](), "Auto-3d must hide the view picker")
+assert(not visibility[1](), "Auto-3D must hide the view picker")
 
 assert(not activity.Visible() and not spinnerVisible(), "Idle preview showed progress")
 phase = "sending"
@@ -71,7 +71,7 @@ assert(activity.Visible() and spinnerVisible() and activityText.Text() == "Downl
 previewPhase = "rendering"
 assert(activityText.Text() == "Downloading model...", "Download phase should take priority")
 phase = "ready"
-assert(activityText.Text() == "Rendering..." and activity.Visible(), "Auto-3d hid render progress")
+assert(activityText.Text() == "Rendering..." and activity.Visible(), "Auto-3D hid render progress")
 previewPhase = "idle"
 assert(not activity.Visible(), "Finished render left the indicator visible")
 busy = "Rendering"

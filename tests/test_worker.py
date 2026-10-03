@@ -1,4 +1,5 @@
 import base64
+import http.client
 import json
 import os
 import plistlib
@@ -132,6 +133,29 @@ class WorkerTests(unittest.TestCase):
                         self.assertEqual(render.call_args.args[2], size)
                         self.assertEqual(render.call_args.args[4], "png")
             self.assertTrue(request("/status")["workerRunning"])
+
+            # {index} is the model's position in the plugin list, not in the request.
+            store.update_config({"filenamePattern": "icon-{index}", "renderSize": 512})
+            exported = request("/export", {"items": [{"sceneId": scene["sceneId"], "name": "Head", "index": 3}]})
+            self.assertEqual(Path(exported["results"][0]["path"]).name, "icon-3.png")
+
+            def raw(headers, method="GET", path="/status"):
+                connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+                try:
+                    connection.putrequest(method, path, skip_host=True)
+                    for key, value in headers.items():
+                        connection.putheader(key, value)
+                    connection.endheaders()
+                    response = connection.getresponse()
+                    response.read()
+                    return response.status
+                finally:
+                    connection.close()
+
+            self.assertEqual(raw({"Host": f"localhost:{httpd.server_port}", "X-Prism": "1"}), 200)
+            self.assertEqual(raw({"Host": f"evil.example:{httpd.server_port}", "X-Prism": "1"}), 403)
+            self.assertEqual(raw({"Host": "127.0.0.1", "X-Prism": "1", "Content-Length": "-1"},
+                                 "PUT", "/config"), 400)
         finally:
             httpd.shutdown()
             httpd.server_close()

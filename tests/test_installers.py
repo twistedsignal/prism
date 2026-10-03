@@ -80,5 +80,23 @@ class InstallerTests(unittest.TestCase):
             self.assertNotIn("features", json.loads(path.read_text()))
 
 
+class ConsistencyTests(unittest.TestCase):
+    def test_raven_version_matches_backend(self):
+        sys.path.insert(0, str(ROOT / "backend"))
+        import assets
+
+        self.assertIn(f'local raven_version="{assets.RAVEN_VERSION}"', (ROOT / "install.sh").read_text())
+        self.assertIn(f'$ravenVersion = "{assets.RAVEN_VERSION}"', (ROOT / "install.ps1").read_text())
+
+    def test_uninstall_runs_before_network_and_blender(self):
+        source = (ROOT / "install.sh").read_text()
+        uninstall = source.index('if [[ "$uninstall" == true ]]')
+        self.assertLess(uninstall, source.index("api.github.com"))
+        self.assertLess(uninstall, source.index("find_blender()"))
+        windows = (ROOT / "install.ps1").read_text()
+        self.assertLess(windows.index("if ($Remove)"), windows.index("api.github.com"))
+        self.assertLess(windows.index("if ($Remove)"), windows.index("$env:PRISM_BLENDER"))
+
+
 if __name__ == "__main__":
     unittest.main()

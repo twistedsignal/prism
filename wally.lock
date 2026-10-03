@@ -8,6 +8,6 @@ version = "0.4.1"
 dependencies = []
 
 [[package]]
-name = "ivadsiuls/prism"
-version = "0.2.0"
+name = "twistedsignal/prism"
+version = "0.7.0"
 dependencies = [["vide", "centau/vide@0.4.1"]]

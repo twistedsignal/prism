@@ -164,8 +164,7 @@ def extract_backend(archive, destination):
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as bundle:
             for member in bundle.namelist():
-                target = (destination / member).resolve()
-                if not str(target).startswith(str(destination.resolve())):
+                if not (destination / member).resolve().is_relative_to(destination.resolve()):
                     raise UpdateError("The update archive contains unsafe paths")
             bundle.extractall(destination)
     else:
@@ -176,7 +175,7 @@ def extract_backend(archive, destination):
                 # Pythons without extraction filters: check member paths ourselves.
                 for member in bundle.getmembers():
                     target = (destination / member.name).resolve()
-                    if not str(target).startswith(str(destination.resolve())) or member.issym() or member.islnk():
+                    if not target.is_relative_to(destination.resolve()) or member.issym() or member.islnk():
                         raise UpdateError("The update archive contains unsafe paths")
                 bundle.extractall(destination)
     backend = destination / "backend"
