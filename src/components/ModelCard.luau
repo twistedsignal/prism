@@ -7,7 +7,7 @@ const new = vide.create
 
 export type Props = {
 	model: Types.Model,
-	index: number,
+	index: () -> number,
 	selected: () -> boolean,
 	onSelect: () -> (),
 }

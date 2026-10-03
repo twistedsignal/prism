@@ -499,15 +499,15 @@ const function RenderPage(props: Props): Frame
 				PaddingTop = UDim.new(0, 2),
 				PaddingLeft = UDim.new(0, 2),
 			}),
-			vide.indexes(store.models, function(model, index)
+			vide.values(store.models, function(model, index)
 				return ModelCard({
-					model = model(),
+					model = model,
 					index = index,
 					selected = function()
-						return store.selected() == index
+						return store.selected() == index()
 					end,
 					onSelect = function()
-						store.select(index)
+						store.select(index())
 					end,
 				})
 			end),

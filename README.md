@@ -95,6 +95,7 @@ scripts/build.bash   # build/Prism.rbxm
 scripts/dev.bash     # build into your Studio Plugins folder and rebuild on change
 selene src
 lune run tests/selection.luau
+lune run tests/model-cards.luau
 lune run tests/auto3d.luau
 lune run tests/drag.luau
 lune run tests/camera.luau

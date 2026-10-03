@@ -7,8 +7,9 @@ local function load(path, environment)
 end
 local camera = load('src/CameraControls.luau')
 local settings = { cameraRotation = 20, cameraElevation = 15, zoom = 1 }
-local model = { name = 'Test', settings = function() return settings end }
-local controls, move, initiatingPress
+local phase, previewPhase, busy, connected = "ready", "idle", nil, true
+local model = { state = function() return phase end, name = 'Test', settings = function() return settings end }
+local controls, move, initiatingPress, activity, activityText, spinnerVisible
 local automatic = false
 local visibility = {}
 local source = function(value) return function(next)
@@ -20,13 +21,15 @@ local vide = {
     effect = function(callback) callback() end,
     create = function() return function(properties)
         if properties.Name == 'CameraControls' then controls = properties end
+        if properties.Name == 'Activity' then activity = properties end
+        if properties.Name == 'ActivityText' then activityText = properties end
         return properties
     end end,
 }
 local modules = {
     ['../vide'] = vide, ['./Theme'] = { stroke = function() return {} end },
     ['./Segmented'] = function() return {} end, ['../Types'] = {},
-    ['../CameraControls'] = camera, ['./Spinner'] = function() return {} end,
+    ['../CameraControls'] = camera, ['./Spinner'] = function(visible) spinnerVisible = visible; return {} end,
     ['../Overlay'] = { drag = function(input, callback) initiatingPress = input; move = callback end },
 }
 local Preview = load('src/components/Preview.luau', {
@@ -39,6 +42,9 @@ local Preview = load('src/components/Preview.luau', {
              Font = { SourceSansBold = 'Bold', SourceSans = 'Regular' } },
 })
 Preview({
+    connected = function() return connected end,
+    previewState = function() return previewPhase end,
+    busy = function() return busy end,
     auto3d = function() return automatic end,
     currentModel = function() return model end, view = function() return 'blender' end,
     previewVersion = function() return 1 end, previewImage = function() return nil end,
@@ -58,3 +64,24 @@ print('Preview mouse drag and wheel checks passed')
 assert(visibility[1](), "Manual view picker should be visible")
 automatic = true
 assert(not visibility[1](), "Auto-3d must hide the view picker")
+
+assert(not activity.Visible() and not spinnerVisible(), "Idle preview showed progress")
+phase = "sending"
+assert(activity.Visible() and spinnerVisible() and activityText.Text() == "Downloading model...")
+previewPhase = "rendering"
+assert(activityText.Text() == "Downloading model...", "Download phase should take priority")
+phase = "ready"
+assert(activityText.Text() == "Rendering..." and activity.Visible(), "Auto-3d hid render progress")
+previewPhase = "idle"
+assert(not activity.Visible(), "Finished render left the indicator visible")
+busy = "Rendering"
+assert(activityText.Text() == "Rendering...")
+busy = "Uploading"
+assert(activityText.Text() == "Uploading...")
+busy = nil
+phase = "error"
+assert(not activity.Visible(), "Failed download left the indicator spinning")
+phase = "sending"
+connected = false
+assert(not activity.Visible(), "Offline model falsely showed an active download")
+print("Preview download, render, completion and error indicator checks passed")

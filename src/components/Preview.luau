@@ -169,22 +169,35 @@ const function Preview(props: Props): Frame
 		if model == nil then
 			return "Select models in Studio to add them."
 		end
-		if model.state() == "serializing" then
-			return "Reading model…"
-		end
-		if model.state() == "sending" then
-			return "Loading assets…"
-		end
 		if model.state() == "error" then
 			return model.warning() or "This model could not be read."
 		end
 		if props.previewState() == "error" then
 			return props.previewError() or "Render failed."
 		end
-		if props.previewVersion() == 0 then
-			return "Rendering…"
-		end
 		return model.warning() or ""
+	end
+	const activity = function(): string
+		const model = props.currentModel()
+		if model == nil or not props.connected() then
+			return ""
+		end
+		if model.state() == "serializing" then
+			return "Reading model..."
+		end
+		if model.state() == "sending" then
+			return "Downloading model..."
+		end
+		if props.busy() == "Rendering" or props.previewState() == "rendering" then
+			return "Rendering..."
+		end
+		if props.busy() == "Uploading" then
+			return "Uploading..."
+		end
+		return ""
+	end
+	const loading = function(): boolean
+		return activity() ~= ""
 	end
 	const hasImage = source(false)
 
@@ -288,12 +301,32 @@ const function Preview(props: Props): Frame
 					end
 				end,
 			}),
-			Spinner(function()
-				const model = props.currentModel()
-				return model ~= nil and ((not props.auto3d() and (model.state() == "serializing" or model.state() == "sending"))
-					or (props.view() == "blender" and props.previewState() == "rendering")
-					or props.busy() == "Rendering" or props.busy() == "Uploading")
-			end),
+			new("Frame")({
+				Name = "Activity",
+				AnchorPoint = Vector2.new(0, 1),
+				Position = UDim2.new(0, 2, 1, -4),
+				Size = UDim2.fromOffset(168, 26),
+				BackgroundColor3 = Theme.DARKER,
+				BackgroundTransparency = 0.15,
+				BorderSizePixel = 0,
+				Visible = loading,
+				ZIndex = 5,
+
+				new("UICorner")({ CornerRadius = UDim.new(0, 4) }),
+				Spinner(loading),
+				new("TextLabel")({
+					Name = "ActivityText",
+					Position = UDim2.fromOffset(32, 0),
+					Size = UDim2.new(1, -38, 1, 0),
+					BackgroundTransparency = 1,
+					Text = activity,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextColor3 = Theme.MUTED,
+					Font = Enum.Font.SourceSans,
+					TextSize = 14,
+					ZIndex = 6,
+				}),
+			}),
 			vide.show(function()
 				return props.view() == "3d"
 			end, function()
@@ -309,7 +342,7 @@ const function Preview(props: Props): Frame
 				BackgroundTransparency = 0.1,
 				BorderSizePixel = 0,
 				Visible = function()
-					return status() ~= "" and (props.view() == "blender" or props.currentModel() == nil or props.previewState() == "error")
+					return not loading() and status() ~= "" and (props.view() == "blender" or props.currentModel() == nil or props.previewState() == "error")
 				end,
 				Text = status,
 				TextWrapped = true,
