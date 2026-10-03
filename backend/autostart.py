@@ -11,7 +11,9 @@ from xml.sax.saxutils import escape
 import config
 
 SERVICE_NAME = "prism"
-LAUNCH_AGENT = "com.ivadsiuls.prism"
+LAUNCH_AGENT = "dev.ivadsiuls.prism"
+# Label used by v0.1.0; removed on install and uninstall.
+LEGACY_LAUNCH_AGENTS = ("com.ivadsiuls.prism",)
 TASK_NAME = "Prism"
 
 
@@ -88,11 +90,19 @@ def uninstall_linux():
 # MACOS
 # ============================================================
 
-def launch_agent_path():
-    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT}.plist"
+def launch_agent_path(label=LAUNCH_AGENT):
+    return Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+
+
+def remove_legacy_launch_agents():
+    for label in LEGACY_LAUNCH_AGENTS:
+        plist = launch_agent_path(label)
+        run(["launchctl", "bootout", f"gui/{os.getuid()}", str(plist)], check=False)
+        plist.unlink(missing_ok=True)
 
 
 def install_macos(blender):
+    remove_legacy_launch_agents()
     log = Path.home() / "Library" / "Logs" / "Prism.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     arguments = "\n".join(f"        <string>{escape(part)}</string>" for part in serve_command(blender))
@@ -118,6 +128,7 @@ def install_macos(blender):
 
 
 def uninstall_macos():
+    remove_legacy_launch_agents()
     plist = launch_agent_path()
     run(["launchctl", "bootout", f"gui/{os.getuid()}", str(plist)], check=False)
     plist.unlink(missing_ok=True)
