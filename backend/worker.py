@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bpy
 import assets
 import config
+import memory
 import renderer
 import schema
 from render_cache import RenderCache
@@ -22,7 +23,8 @@ def main():
     directory = Path(directory)
     store = config.Store()
     scenes = SceneCache(cache, assets.Resolver(cache, lambda: store.get_config()["ravenPath"]))
-    render_cache = RenderCache()
+    # Final images for previews, thumbnails and exports; small, since effect edits are cheap to redo.
+    render_cache = RenderCache(max_bytes=16 * 1024 * 1024)
     engine = None
     with socket.create_connection(("127.0.0.1", int(port)), timeout=30) as connection:
         connection.settimeout(None)
@@ -36,6 +38,8 @@ def main():
                         payload = json.loads((directory / "scene.json").read_bytes())
                         identifier, warnings = scenes.add(b"", payload)
                         result = {"sceneId": identifier, "warnings": warnings, "incomplete": scenes.incomplete(identifier)}
+                        del payload
+                        memory.release()
                     elif request["operation"] == "render":
                         identifier = request["sceneId"]
                         if not scenes.exists(identifier):
@@ -54,6 +58,9 @@ def main():
                             renderer.save_png_pixels(pixels, directory / "render.png")
                         else:
                             (directory / "render.rgba").write_bytes(renderer.to_rgba8_top_down(pixels))
+                        # Exports are large one-offs; return temporary buffers afterwards.
+                        del pixels
+                        memory.release()
                         result = {}
                     else:
                         raise ValueError("Unknown worker operation")

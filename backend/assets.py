@@ -20,6 +20,8 @@ import mesh_asset
 import uploader
 
 MAX_BYTES = 128 * 1024 * 1024
+# Decoded meshes and textures also live on disk; memory only speeds up re-selection.
+DECODED_CACHE_BYTES = 16 * 1024 * 1024
 # Keep in sync with install.sh and install.ps1 (tests/test_installers.py checks this).
 RAVEN_VERSION = "0.3.0"
 RAVEN_ARCHIVE = f"https://github.com/twistedsignal/raven/archive/refs/tags/v{RAVEN_VERSION}.tar.gz"
@@ -235,9 +237,9 @@ class Resolver:
                 temporary.replace(path)
             finally:
                 temporary.unlink(missing_ok=True)
-        if weight <= 64 * 1024 * 1024:
+        if weight <= DECODED_CACHE_BYTES:
             while self.decoded and (
-                self.decoded_bytes + weight > 64 * 1024 * 1024
+                self.decoded_bytes + weight > DECODED_CACHE_BYTES
                 or len(self.decoded) >= 32
             ):
                 removed = next(iter(self.decoded))

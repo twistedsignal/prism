@@ -121,16 +121,6 @@ def decode_texture(texture):
     return width, height, pixels
 
 
-def multiply_texture(pixels, rgb):
-    """Tint a material detail map by the part color, as Roblox tints its materials."""
-    import numpy as np
-
-    data = np.frombuffer(pixels, dtype=np.uint8).reshape(-1, 4).astype(np.float32)
-    data[:, :3] *= np.asarray(rgb, dtype=np.float32)
-    data[:, 3] = 255
-    return (np.clip(data, 0, 255) + 0.5).astype(np.uint8).tobytes()
-
-
 def box_uvs(corners, studs_per_tile):
     """World-scale UVs: project each triangle onto its dominant axis, one tile per studs_per_tile."""
     result = []
@@ -393,13 +383,24 @@ def build(payload, directory):
     vertex_count = 0
     warnings = []
 
-    def material_for(rgb, transparency, texture):
+    details = {}
+
+    def detail_file(texture_id):
+        """Write a material's detail texture once; every part color shares it."""
+        if texture_id not in details:
+            width, height, pixels = decode_texture(textures[texture_id])
+            details[texture_id] = f"detail{len(details)}.png"
+            write_png(directory / details[texture_id], width, height, pixels)
+        return details[texture_id]
+
+    def material_for(rgb, transparency, texture, detail=None):
+        """detail: a material texture the renderer multiplies in as a separate pass (MTL map_Ke)."""
         texture_id = texture.get("id") if isinstance(texture, dict) else None
         mode = texture.get("mode", "overlay") if isinstance(texture, dict) else None
         if texture_id is not None and texture_id not in textures:
             warnings.append(f"Missing texture {texture_id}")
             texture_id = None
-        key = (rgb if texture_id is None or mode in ("overlay", "multiply") else None, transparency, texture_id, mode)
+        key = (rgb if texture_id is None or mode == "overlay" else None, transparency, texture_id, mode, detail)
         if key in materials:
             return materials[key]
         name = f"Material{len(materials)}"
@@ -418,11 +419,11 @@ def build(payload, directory):
             width, height, pixels = decoded_textures[texture_id]
             if mode == "overlay":
                 pixels = overlay_texture(pixels, rgb)
-            elif mode == "multiply":
-                pixels = multiply_texture(pixels, rgb)
             filename = f"texture{len(materials)}.png"
             write_png(directory / filename, width, height, pixels)
             material_lines.append(f"map_Kd {filename}")
+        if detail is not None:
+            material_lines.append(f"map_Ke {detail_file(detail)}")
         material_lines.append("")
         return name
 
@@ -467,9 +468,10 @@ def build(payload, directory):
             textures[baked_id] = baked
             texture = {"id": baked_id, "mode": "alpha"}
         elif surface:
+            # Plain part color here; the renderer multiplies the shared material
+            # texture in afterwards, so parts never need one texture per color.
             corners = box_uvs(corners, surface[1])
-            texture = {"id": surface[0], "mode": "multiply"}
-        material = material_for(rgb, transparency, texture)
+        material = material_for(rgb, transparency, texture, surface[0] if surface and not layers else None)
         face_lines.append(f"usemtl {material}")
         positions, uvs, normals = [], [], []
         for point, uv, normal in corners:
@@ -548,7 +550,7 @@ class SceneCache:
             payload, recovery_warnings, incomplete = self.resolver.resolve(payload)
         # Resolved bytes change the ID after credential repair, invalidating renderer objects.
         resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        identifier = scene_id(b"appearance-v7:" + resolved)
+        identifier = scene_id(b"appearance-v8:" + resolved)
         if incomplete:
             identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier

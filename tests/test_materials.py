@@ -57,7 +57,8 @@ class SceneMaterialTests(unittest.TestCase):
 
     def test_built_in_material_tiles_in_studs(self):
         obj, mtl, root = self.build([block({"name": "Wood"})])
-        self.assertIn("map_Kd", mtl)
+        self.assertIn("map_Ke", mtl)
+        self.assertNotIn("map_Kd", mtl)
         uvs = self.uvs(obj)
         # An 8-stud face spans two 4-stud Wood tiles.
         self.assertAlmostEqual(np.ptp(uvs[:, 0]), 2.0, places=5)
@@ -75,13 +76,21 @@ class SceneMaterialTests(unittest.TestCase):
         self.assertAlmostEqual(np.ptp(self.uvs(obj)[:, 0]), 4.0, places=5)
 
     def test_material_is_tinted_by_part_color(self):
-        _, mtl, root = self.build([block({"name": "Concrete"}, color="#FF0000")])
+        _, mtl, root = self.build([
+            block({"name": "Concrete"}, color="#FF0000"),
+            block({"name": "Concrete"}, color="#00FF00"),
+        ])
         import zlib
-        png = (root / mtl.split("map_Kd ")[1].split()[0]).read_bytes()
+        self.assertEqual(mtl.count("map_Ke"), 2)
+        self.assertEqual(len(list(root.glob("detail*.png"))), 1)
+        self.assertNotIn("map_Kd", mtl)
+        png = (root / mtl.split("map_Ke ")[1].split()[0]).read_bytes()
         data = zlib.decompress(png[png.index(b"IDAT") + 4:png.index(b"IEND") - 8])
         rows = np.frombuffer(data, np.uint8).reshape(256, 1 + 256 * 4)[:, 1:].reshape(256, 256, 4)
-        self.assertGreater(rows[..., 0].mean(), 150)
-        self.assertEqual(rows[..., 1].max(), 0)
+        self.assertTrue(np.array_equal(rows[..., 0], rows[..., 1]))
+        self.assertTrue(np.array_equal(rows[..., 1], rows[..., 2]))
+        self.assertIn("Kd 1.000000 0.000000 0.000000", mtl)
+        self.assertIn("Kd 0.000000 1.000000 0.000000", mtl)
 
     def test_neon_is_brightened(self):
         _, plain, _ = self.build([block({"name": "SmoothPlastic"}, color="#004080")])

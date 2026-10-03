@@ -13,6 +13,7 @@ import schema  # noqa: E402
 import fonts  # noqa: E402
 from effects import EFFECT_KEYS, cavity_angle_mask, post_process_pixels, required_passes  # noqa: E402
 from render_cache import RenderCache  # noqa: E402
+import memory  # noqa: E402
 
 
 # ============================================================
@@ -258,11 +259,25 @@ def prepare_surface_atlas_uvs(objects, material):
                 coord.y = min(max(coord.y, margin), 1.0 - margin)
 
 
+def has_transparency(image, cache):
+    key = ("alpha", image.as_pointer())
+    if key not in cache:
+        width, height = image.size
+        alpha = np.empty(width * height * 4, dtype=np.float32)
+        image.pixels.foreach_get(alpha)
+        cache[key] = bool(np.any(alpha[3::4] < 1.0))
+    return cache[key]
+
+
 def make_workbench_texture(image, rgba, cache, neutral=None, opaque=False):
     """Bake MTL Kd into the diffuse image, since Workbench ignores shaders."""
     key = (image.as_pointer(), tuple(rgba), neutral, opaque)
     if key in cache:
         return cache[key]
+    # A white, fully opaque Kd leaves the image unchanged: reuse it instead of a copy.
+    if neutral is None and tuple(rgba) == (1.0, 1.0, 1.0, 1.0) and not (opaque and has_transparency(image, cache)):
+        cache[key] = image
+        return image
 
     width, height = image.size
     if not width or not height:
@@ -326,11 +341,17 @@ def prepare_materials(objects, roblox_export=False):
             if alpha_input is not None and not alpha_input.is_linked:
                 rgba = (*rgba[:3], float(alpha_input.default_value))
             print(f"Material: {material.name}, diffuse: {rgba}")
-            state = {"material": material, "rgba": rgba, "node": None}
+            state = {"material": material, "rgba": rgba, "node": None, "detail": None}
             states.append(state)
             image_node = find_base_color_image_node(material, principled)
             if not material.use_nodes:
                 continue
+            # Material detail textures arrive as MTL map_Ke; Workbench ignores emission.
+            emission = principled.inputs.get("Emission Color") if principled is not None else None
+            for link in (emission.links if emission is not None else ()):
+                if link.from_node.type == "TEX_IMAGE" and link.from_node.image is not None:
+                    state["detail"] = link.from_node
+                    print(f"  Material detail: {link.from_node.image.name}")
 
             nodes = material.node_tree.nodes
             for node in nodes:
@@ -924,6 +945,67 @@ def render_depth(path, objects):
     render_corner_colors(path, objects, corner_depths, normalize_depths)
 
 
+WHITE_IMAGE = "Prism White"
+
+
+def white_image():
+    image = bpy.data.images.get(WHITE_IMAGE)
+    if image is None:
+        image = bpy.data.images.new(WHITE_IMAGE, width=1, height=1, alpha=True)
+        image.pixels.foreach_set(np.ones(4, dtype=np.float32))
+        image.use_fake_user = True
+    return image
+
+
+def render_detail(path, states):
+    """Render each material's shared detail texture unlit; everything else white.
+
+    The color render shows plain part colors, so multiplying by this pass applies
+    the material textures without one tinted texture per color.
+    """
+    scene = bpy.context.scene
+    shading = scene.display.shading
+    names = ("light", "color_type", "show_cavity", "show_shadows", "show_specular_highlight")
+    saved = {name: getattr(shading, name) for name in names}
+    exposure = scene.view_settings.exposure
+    filepath = scene.render.filepath
+    white = white_image()
+    restore = []
+    try:
+        for state in states:
+            material = state["material"]
+            if not material.use_nodes:
+                continue
+            nodes = material.node_tree.nodes
+            restore.append((material, nodes.active, material.diffuse_color[:]))
+            if state["detail"] is not None:
+                nodes.active = state["detail"]
+            else:
+                node = state.get("white")
+                if node is None:
+                    node = state["white"] = nodes.new("ShaderNodeTexImage")
+                    node.image = white
+                nodes.active = node
+            # Workbench multiplies texture alpha by the material's; keep coverage unchanged.
+            material.diffuse_color = (1.0, 1.0, 1.0, material.diffuse_color[3])
+        shading.light = "FLAT"
+        shading.color_type = "TEXTURE"
+        shading.show_cavity = False
+        shading.show_shadows = False
+        shading.show_specular_highlight = False
+        scene.view_settings.exposure = 0.0
+        scene.render.filepath = str(path)
+        bpy.ops.render.render(write_still=True)
+    finally:
+        for material, active, color in restore:
+            material.node_tree.nodes.active = active
+            material.diffuse_color = color
+        for name, value in saved.items():
+            setattr(shading, name, value)
+        scene.view_settings.exposure = exposure
+        scene.render.filepath = filepath
+
+
 def render_flat(path, objects):
     """Render unlit surface colors, for separating lighting from color."""
     scene = bpy.context.scene
@@ -1187,16 +1269,17 @@ class Renderer:
     Each model lives in its own collection; only the one being rendered is visible.
     """
 
-    MAX_MODELS = 12
+    # Each loaded model keeps its meshes and textures in memory; older ones are re-imported on demand.
+    MAX_MODELS = 2
 
     def __init__(self):
         clear_scene()
         self.models = {}
         self.studio_lights = StudioLights()
         self.directory = tempfile.TemporaryDirectory(prefix="renderer-")
-        self.passes = RenderCache(max_bytes=64 * 1024 * 1024)
-        self.base_renders = RenderCache(max_bytes=32 * 1024 * 1024)
-        self.effect_masks = RenderCache(max_bytes=16 * 1024 * 1024)
+        self.passes = RenderCache(max_bytes=24 * 1024 * 1024)
+        self.base_renders = RenderCache(max_bytes=16 * 1024 * 1024)
+        self.effect_masks = RenderCache(max_bytes=8 * 1024 * 1024)
         self.text = TextLayer()
 
     def load(self, input_path):
@@ -1204,11 +1287,13 @@ class Renderer:
         key = str(Path(input_path).resolve())
         model = self.models.pop(key, None)
         if model is None:
+            # Free the oldest scene before importing the next one, so peak RSS
+            # does not include an extra model during a switch.
+            while len(self.models) >= self.MAX_MODELS:
+                self.unload(next(iter(self.models)))
             model = self.import_model(Path(key))
         # Dicts keep insertion order, so re-inserting marks the model as most recent.
         self.models[key] = model
-        while len(self.models) > self.MAX_MODELS:
-            self.unload(next(iter(self.models)))
         return key
 
     def import_model(self, path):
@@ -1241,6 +1326,8 @@ class Renderer:
         model = self.models.pop(key, None)
         if model is not None:
             self.remove_collection(model["collection"])
+            del model
+            memory.release()
 
     @staticmethod
     def remove_collection(collection):
@@ -1266,7 +1353,7 @@ class Renderer:
         needed = required_passes(settings)
         text_key = ("text", json.dumps({name: settings[name] for name in TEXT_KEYS}, sort_keys=True), size, aa)
         pass_keys = {"normals": ("normals", base_key), "depth": ("depth", base_key), "flat": ("flat", base_key),
-                     "text": text_key}
+                     "detail": ("detail", base_key), "text": text_key}
         passes = {name: self.passes.get(pass_keys[name]) for name in needed}
         if "text" in needed and passes["text"] is None:
             # The text scene is independent of the model, so it never needs the model set up.
@@ -1285,14 +1372,35 @@ class Renderer:
         configure_camera(center, bounds, settings)
         configure_workbench(settings, self.studio_lights, size, aa)
 
+        detail = None
+        if any(state["detail"] is not None for state in model["materials"]):
+            detail = self.passes.get(pass_keys["detail"])
+            if detail is None:
+                path = Path(self.directory.name) / "detail.png"
+                render_detail(path, model["materials"])
+                detail = load_png_pixels(path)[..., :3]
+                self.passes.put(pass_keys["detail"], detail)
         if pixels is None:
             pixels = render_pixels(self.directory.name, model["objects"], settings["minAngle"], self.passes, full_key, base_key)
+            if detail is not None:
+                pixels = pixels.copy()
+                pixels[..., :3] *= detail
             self.base_renders.put(cache_key, pixels)
         for name, render in (("normals", render_surface_normals), ("depth", render_depth), ("flat", render_flat)):
             if name in needed and passes[name] is None:
                 passes[name] = capture_pass(self.directory.name, name, model["objects"], render)
+                if name == "flat" and detail is not None:
+                    passes[name][..., :3] *= detail
                 self.passes.put(pass_keys[name], passes[name])
+        free_render_result()
         return post_process_pixels(pixels, settings, size, self.effect_masks, cache_key, passes)
+
+
+def free_render_result():
+    """Release Blender's copy of the last render; Prism already read it from disk."""
+    result = bpy.data.images.get("Render Result")
+    if result is not None:
+        result.buffers_free()
 
 
 def capture_pass(directory, name, objects, render):
