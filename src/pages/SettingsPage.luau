@@ -10,7 +10,8 @@ const Store = require("../Store")
 
 const new = vide.create
 
-const SIZES = { 128, 256, 384, 512, 768, 1024 }
+const PREVIEW_SIZES = { 128, 256, 384, 512, 768, 1024 }
+const RENDER_SIZES = { 128, 256, 384, 512, 768, 1024, 2048, 4096 }
 const AA = { "OFF", "FXAA", "5", "8", "11", "16", "32" }
 
 export type Props = {
@@ -143,7 +144,7 @@ const function SettingsPage(props: Props): ScrollingFrame
 			text = function()
 				return `{config("renderSize") or "-"} px`
 			end,
-			options = options(SIZES, " px"),
+			options = options(RENDER_SIZES, " px"),
 			onSelect = function(value)
 				store.updateConfig({ renderSize = value })
 			end,
@@ -167,7 +168,7 @@ const function SettingsPage(props: Props): ScrollingFrame
 			text = function()
 				return `{config("previewSize") or "-"} px`
 			end,
-			options = options(SIZES, " px"),
+			options = options(PREVIEW_SIZES, " px"),
 			onSelect = function(value)
 				store.updateConfig({ previewSize = value })
 				task.defer(store.requestPreview)

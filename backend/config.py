@@ -13,7 +13,8 @@ import schema
 APP_NAME = "Prism"
 DEFAULT_PORT = 47821
 AA_OPTIONS = ("OFF", "FXAA", "5", "8", "11", "16", "32")
-SIZE_OPTIONS = (128, 256, 384, 512, 768, 1024)
+PREVIEW_SIZE_OPTIONS = (128, 256, 384, 512, 768, 1024)
+RENDER_SIZE_OPTIONS = (*PREVIEW_SIZE_OPTIONS, 2048, 4096)
 
 
 def config_dir():
@@ -80,9 +81,9 @@ def normalize_config(values):
                 config[key] = int(value)
         elif isinstance(value, str):
             config[key] = value.strip()
-    if config["previewSize"] not in SIZE_OPTIONS:
+    if config["previewSize"] not in PREVIEW_SIZE_OPTIONS:
         config["previewSize"] = CONFIG_DEFAULTS["previewSize"]
-    if config["renderSize"] not in SIZE_OPTIONS:
+    if config["renderSize"] not in RENDER_SIZE_OPTIONS:
         config["renderSize"] = CONFIG_DEFAULTS["renderSize"]
     for key in ("previewAA", "renderAA"):
         if config[key] not in AA_OPTIONS:

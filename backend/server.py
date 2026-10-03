@@ -228,7 +228,7 @@ def make_handler(bridge):
             body = self.read_json()
             settings_config = bridge.store.get_config()
             size = body.get("size", settings_config["previewSize"])
-            if size not in config.SIZE_OPTIONS:
+            if size not in config.PREVIEW_SIZE_OPTIONS:
                 size = settings_config["previewSize"]
             client = body.get("client") if isinstance(body.get("client"), str) else None
             scene_id = body.get("sceneId")

@@ -119,6 +119,18 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(preview["width"], 128)
             exported = request("/export", {"items": [{"sceneId": scene["sceneId"], "name": "Head"}]})
             self.assertEqual(Path(exported["results"][0]["path"]).read_bytes(), b"image")
+            store.update_config({"previewSize": 1024})
+            for size in (2048, 4096):
+                with self.subTest(size=size):
+                    store.update_config({"renderSize": size})
+                    with patch.object(self.worker, "render", wraps=self.worker.render) as render:
+                        capped = request("/preview", {"sceneId": scene["sceneId"], "size": size})
+                        self.assertEqual(capped["width"], 1024)
+                        self.assertEqual(render.call_args.args[2], 1024)
+                        exported = request("/export", {"items": [{"sceneId": scene["sceneId"], "name": "Head"}]})
+                        self.assertNotIn("error", exported["results"][0])
+                        self.assertEqual(render.call_args.args[2], size)
+                        self.assertEqual(render.call_args.args[4], "png")
             self.assertTrue(request("/status")["workerRunning"])
         finally:
             httpd.shutdown()
@@ -126,6 +138,21 @@ class WorkerTests(unittest.TestCase):
             stop.set()
             http_thread.join()
             job_thread.join()
+
+
+class RenderSizeTests(unittest.TestCase):
+    def test_high_resolution_render_settings_persist_without_expanding_previews(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for size in (2048, 4096):
+                with self.subTest(size=size):
+                    store = config.Store(directory)
+                    store.update_config({"renderSize": size, "previewSize": 1024})
+                    loaded = config.Store(directory).get_config()
+                    self.assertEqual(loaded["renderSize"], size)
+                    self.assertEqual(loaded["previewSize"], 1024)
+                    invalid = config.normalize_config({"renderSize": 8192, "previewSize": size})
+                    self.assertEqual(invalid["renderSize"], config.CONFIG_DEFAULTS["renderSize"])
+                    self.assertEqual(invalid["previewSize"], config.CONFIG_DEFAULTS["previewSize"])
 
 
 class RuntimeTests(unittest.TestCase):
