@@ -27,6 +27,7 @@ local modules = {
 		save = function(_, key, value) saved[key] = value end,
 	},
 	["./Types"] = {},
+	["./LightingSync"] = {},
 	["./Base64"] = { decode = function() return buffer.create(4) end },
 	["./Version"] = "test",
 	["./Serializer"] = {

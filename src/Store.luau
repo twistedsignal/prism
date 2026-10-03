@@ -6,6 +6,7 @@ const Data = require("./Data")
 const Types = require("./Types")
 const Base64 = require("./Base64")
 const Serializer = require("./Serializer")
+const LightingSync = require("./LightingSync")
 
 const source = vide.source
 
@@ -470,12 +471,12 @@ const function create(plugin: Plugin, bridge: Bridge)
 	end
 
 	local cameraToken = 0
-	const function applyToTargets(change: (Types.Settings) -> (), deferPreview: boolean?, keepView: boolean?, skipPreview: boolean?)
+	const function applyToTargets(change: (Types.Settings, Types.Model) -> (), deferPreview: boolean?, keepView: boolean?, skipPreview: boolean?)
 		invalidatePreview(keepView)
 		const affected = targets()
 		for _, model in affected do
 			const settings = cloneSettings(model.settings())
-			change(settings)
+			change(settings, model)
 			model.settings(settings)
 			if not skipPreview then
 				queueThumbnail(model)
@@ -498,6 +499,42 @@ const function create(plugin: Plugin, bridge: Bridge)
 		else
 			requestPreview(keepView)
 		end
+	end
+
+	const function syncLighting()
+		if currentModel() == nil or busy() ~= nil then
+			return
+		end
+		-- Compute every target first so an unreadable place or pivot cannot partially apply.
+		const ok, changes = pcall(function()
+			const snapshot = LightingSync.capture(game:GetService("Lighting"))
+			const values = {}
+			for _, model in targets() do
+				const root = model.instance
+				local pivot = CFrame.identity
+				if root:IsA("PVInstance") then
+					pivot = (root :: PVInstance):GetPivot()
+				else
+					const parts = Serializer.getParts(root)
+					if parts[1] then
+						pivot = parts[1].CFrame
+					end
+				end
+				values[model] = LightingSync.forModel(snapshot, model.settings(), pivot)
+			end
+			return values
+		end)
+		if not ok then
+			setNotice("Could not read this place's lighting. Render settings were kept.", "error")
+			return
+		end
+		activePreset(nil)
+		applyToTargets(function(settings, model)
+			for key, value in changes[model] do
+				settings[key] = value
+			end
+		end)
+		setNotice("Place lighting synced for the current model view.", "success")
 	end
 
 	const function setCamera(values: { [string]: number })
@@ -897,6 +934,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		useSelection = useSelection,
 		select = select,
 		setValue = setValue,
+		syncLighting = syncLighting,
 		setCamera = setCamera,
 		setTextOffset = setTextOffset,
 		beginTextDrag = beginTextDrag,

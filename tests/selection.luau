@@ -19,6 +19,7 @@ local modules = {
 	["./vide"] = { source = source, effect = function() end },
 	["./Data"] = { load = function() return {} end },
 	["./Types"] = {},
+	["./LightingSync"] = {},
 	["./Base64"] = {},
 	["./Version"] = "test",
 	["./Serializer"] = {

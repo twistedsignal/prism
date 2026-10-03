@@ -1,0 +1,98 @@
+[
+  {
+    "camera": [
+      0,
+      0,
+      0
+    ],
+    "direction": [
+      1,
+      0,
+      0
+    ],
+    "pivot": [
+      0,
+      0,
+      0
+    ],
+    "stance": [
+      0,
+      0,
+      0
+    ],
+    "sunElevation": 0,
+    "sunRotation": -90
+  },
+  {
+    "camera": [
+      72,
+      -15,
+      35
+    ],
+    "direction": [
+      0.3,
+      0.8,
+      -0.4
+    ],
+    "pivot": [
+      10,
+      85,
+      -20
+    ],
+    "stance": [
+      30,
+      -40,
+      25
+    ],
+    "sunElevation": 28.96424643377439,
+    "sunRotation": 161.36679976383573
+  },
+  {
+    "camera": [
+      -105,
+      50,
+      -70
+    ],
+    "direction": [
+      -0.5,
+      0.2,
+      0.7
+    ],
+    "pivot": [
+      -20,
+      -110,
+      30
+    ],
+    "stance": [
+      -45,
+      80,
+      -20
+    ],
+    "sunElevation": -7.73592550454604,
+    "sunRotation": -139.8592886122091
+  },
+  {
+    "camera": [
+      0,
+      0,
+      0
+    ],
+    "direction": [
+      0,
+      1,
+      0
+    ],
+    "pivot": [
+      0,
+      0,
+      0
+    ],
+    "stance": [
+      0,
+      0,
+      0
+    ],
+    "sunElevation": 89,
+    "sunRotation": 0
+  }
+]

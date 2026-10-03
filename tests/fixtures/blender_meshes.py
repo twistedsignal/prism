@@ -1,5 +1,6 @@
-"""Run inside Blender: check soccer texture orientation and Union colors through OBJ."""
+"""Run inside Blender: verify lighting direction, soccer UVs and Union colors."""
 import base64
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -12,6 +13,22 @@ sys.path.insert(0, str(ROOT / "backend"))
 import mesh_asset
 import renderer
 import scene
+
+# The fixture stores angles produced by the Luau sync module. Reconstruct the
+# same world direction with Blender's actual camera and model stance matrices.
+from mathutils import Vector
+for case in json.loads((ROOT / "tests" / "fixtures" / "lighting-directions.json").read_text()):
+    settings = {"cameraRotation": case["camera"][0], "cameraElevation": case["camera"][1],
+                "cameraRoll": case["camera"][2]}
+    settings = renderer.schema.normalize(settings)
+    camera = renderer.configure_camera(Vector((0,0,0)), Vector((1,1,1)), settings)
+    view = renderer.view_direction(case["sunRotation"], case["sunElevation"])
+    actual = camera.matrix_world.to_quaternion() @ view
+    direction = Vector((case["direction"][0], -case["direction"][2], case["direction"][1])).normalized()
+    pivot = renderer.stance_matrix(*case["pivot"]).to_3x3()
+    stance = renderer.stance_matrix(*case["stance"]).to_3x3()
+    expected = stance @ pivot.inverted() @ direction
+    assert actual.dot(expected) > 0.9998, (case, actual, expected)
 
 IDENTITY = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
 fixture = ROOT / "tests" / "fixtures" / "soccer"

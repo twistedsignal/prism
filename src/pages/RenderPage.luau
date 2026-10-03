@@ -5,6 +5,7 @@ const vide = require("../vide")
 const Types = require("../Types")
 const Theme = require("../components/Theme")
 const Button = require("../components/Button")
+const BaseSetting = require("../components/BaseSetting")
 const Dropdown = require("../components/Dropdown")
 const Segmented = require("../components/Segmented")
 const Section = require("../components/Section")
@@ -432,6 +433,24 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 			section.setHeight(section.layout.AbsoluteContentSize.Y)
 		end
 		cleanup(section.layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateHeight))
+		if sectionSchema.id == "lighting" then
+			const row = BaseSetting({
+				name = "Sync Lighting",
+				index = 0,
+				labelWidth = 0,
+				parent = section.body,
+				description = "Copy this place's sun/moon, ambient light, exposure and shadows for the current model view. Sky, atmosphere and local lights are not reproduced.",
+			})
+			Button({
+				text = "Sync Lighting",
+				size = UDim2.new(1, -16, 0, 28),
+				position = UDim2.fromOffset(8, 3),
+				enabled = function()
+					return store.currentModel() ~= nil and store.busy() == nil
+				end,
+				activated = store.syncLighting,
+			}).Parent = row
+		end
 		buildItems(section.body, sectionSchema.settings)
 		task.defer(updateHeight)
 	end
