@@ -32,6 +32,46 @@ irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1 | iex
 
 The plugin has outlines, shadows, glow, color and depth effects, and text. Presets are saved locally. Prism also remembers a model's settings when you deselect and reselect it.
 
+## Agent automation
+
+Prism installs a `prism` CLI for agents with terminal access. The Studio plugin runs its agent service in edit mode even when the panel is closed. Commands do not change your selection, panel settings, presets or saved preferences.
+
+```sh
+prism status --json
+prism sessions --json
+prism models --query Crate --json
+prism presets --json
+prism schema --json
+prism render --path Workspace.Items.Crate --preset Inventory --size 1024 --emoji-provider apple --output ./icons/crate.png --json
+prism upload --path Workspace.Items.Crate --creator user:123 --output ./icons/crate-upload.png --json
+```
+
+Use `--session ID` when several Studio windows are connected, and `--target ID` with an ID returned by `models`. For names containing dots, pass exact segments with `--path-json '["Workspace","Name.with.dots"]'`. Duplicate names in a path are rejected; discovered target IDs resolve the ambiguity. IDs last for that Studio service session.
+
+Settings start with Prism defaults, then the requested preset, then `--settings '{"cameraRotation":45,"text":"Hello 😀"}'` or `--settings-file settings.json`. `--size`, `--aa`, `--emoji-provider`, `--creator` and `--output` apply only to the job. Omitted quality, emoji provider, creator and output directory use your preferences. Files are never overwritten; omitted output filenames are generated uniquely.
+
+For batches, run `prism batch batch.json --json` with a manifest such as:
+
+```json
+{
+  "defaults": {"preset": "Inventory", "size": 1024, "emojiProvider": "google"},
+  "items": [
+    {"path": ["Workspace", "Crate"], "output": "./icons/crate.png"},
+    {"path": ["Workspace", "Sword"], "output": "./icons/sword.png", "upload": true, "creator": "user:123"}
+  ]
+}
+```
+
+Relative output paths resolve from the CLI's working directory. Per-item options override manifest defaults. Each target is cloned when its serialization starts; subsequent edits affect later jobs. Successful items are kept when others fail. Upload results include the saved PNG path, Decal asset ID and image ID when Roblox exposes it. Raven uses your existing credentials.
+
+All results are JSON, and progress goes to stderr. Exit codes are 0 for success, 1 for failure or partial failure, and 2 for a wait timeout. The default wait is 300 seconds, configurable with `--timeout`. A timeout leaves the job running. Inspect it with `prism job JOB_ID --wait --json`; do not automatically repeat an upload. Job history is held in memory, bounded to 256 jobs and one hour for completed jobs. A backend restart clears it.
+
+Agents can read `prism agent instructions` and `prism agent describe`. To install the bundled skill explicitly, run `prism agent install-skill --directory ~/.codex/skills` or point it at your agent's skills directory. Existing different skills are not replaced automatically.
+
+On Linux/macOS the launcher is `~/.local/bin/prism`; on Windows it is `%LOCALAPPDATA%\Prism\bin\prism.cmd`. If `prism` is absent from PATH, invoke that path directly or add its directory to PATH and reopen your terminal. `prism status` reports the launcher path and readiness. `--port` overrides the configured port for one command.
+
+Upgrades preserve settings and presets. The new backend installs or refreshes the launcher at startup, including when it was downloaded by an older updater. Restart Studio after upgrading to load the agent service, and allow Prism's localhost HTTP access when requested. Re-running the installer also installs the CLI. Agent requests use the versioned `/agent/v1` API; the existing panel API remains available. Uninstalling removes only Prism-owned CLI launchers.
+
 ## Updates and removal
 
 Prism prompts you when a new release is available. After an update, restart Roblox Studio to load the new plugin. You can also use **Settings → Check for updates** or run the installer again.

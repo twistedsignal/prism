@@ -64,13 +64,25 @@ def main():
     if args.command == "install":
         import autostart
 
+        import cli_install
+        info = cli_install.install()
+        print(f"[prism] {info['cliHint']}")
         autostart.install(args.blender, args.raven, args.creator)
         return
     if args.command == "uninstall":
         import autostart
 
+        import cli_install
+        cli_install.uninstall()
         autostart.uninstall()
         return
+
+    import cli_install
+    try:
+        info = cli_install.install()
+        print(f"[prism] {info['cliHint']}")
+    except OSError as error:
+        print(f"[prism] Could not install CLI launcher: {error}")
 
     import server
 

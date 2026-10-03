@@ -122,6 +122,10 @@ main() {
 			rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/prism.service"
 			systemctl --user daemon-reload >/dev/null 2>&1 || true
 		fi
+		local cli_path="$HOME/.local/bin/prism"
+		if [[ -f "$cli_path" ]] && grep -q 'Prism managed CLI launcher' "$cli_path"; then
+			rm -f "$cli_path"
+		fi
 		step "Removing backend..."
 		rm -rf "$install_dir/backend" "$install_dir/.backend-previous" "$cache_dir"
 		step "Removing local Roblox plugin..."

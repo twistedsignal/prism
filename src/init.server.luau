@@ -7,6 +7,8 @@ end
 const vide = require("@self/vide")
 const App = require("@self/App")
 const Bridge = require("@self/Bridge")
+const AgentService = require("@self/AgentService")
+const stopAgentService = AgentService.create(plugin)
 
 const WIDGET_ID = "prism-main"
 const ICON = "rbxassetid://112306091379612"
@@ -69,4 +71,7 @@ if widget.Enabled then
 	mount()
 end
 
-plugin.Unloading:Connect(unmountApp)
+plugin.Unloading:Connect(function()
+	stopAgentService()
+	unmountApp()
+end)

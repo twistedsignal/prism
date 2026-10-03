@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import config
+import agent
 import fonts
 import platform_open
 import schema
@@ -51,14 +52,15 @@ class Bridge:
         self.worker = Worker()
         self.updates = updater.Checker()
         self.updating = threading.Lock()
+        self.agent = agent.Broker(self)
 
     # ---- serialized worker jobs -----------------------------------------
 
-    def render(self, scene_id, settings, size, aa, format="rgba", text_bounds=False):
+    def render(self, scene_id, settings, size, aa, format="rgba", text_bounds=False, emoji_provider=None):
         if not self.scenes.exists(scene_id):
             raise HttpError(404, "Unknown scene; send it again")
         settings = schema.normalize(settings)
-        settings["textEmojiProvider"] = self.store.get_config()["emojiProvider"]
+        settings["textEmojiProvider"] = emoji_provider or self.store.get_config()["emojiProvider"]
         return self.worker.render(scene_id, settings, size, aa, format, text_bounds=text_bounds)
 
     def output_path(self, folder, name, index, overwrite, pattern):
@@ -169,6 +171,9 @@ def make_handler(bridge):
                 path = self.path.split("?", 1)[0].rstrip("/") or "/"
                 handler = ROUTES.get((method, path))
                 argument = None
+                if handler is None and path.startswith("/agent/v1/jobs/") and method == "GET":
+                    handler = Handler.agent_job
+                    argument = path[len("/agent/v1/jobs/"):]
                 if handler is None and path.startswith("/presets/"):
                     handler = ROUTES.get((method, "/presets/<name>"))
                     argument = unquote(path[len("/presets/"):])
@@ -180,6 +185,8 @@ def make_handler(bridge):
                 # The body may be unread, so the connection can't be reused.
                 self.close_connection = True
                 self.send_json(error.status, {"error": error.message})
+            except agent.AgentError as error:
+                self.send_json(400, {"error": str(error)})
             except Superseded:
                 self.send_json(409, {"error": "superseded"})
             except SceneError as error:
@@ -210,7 +217,38 @@ def make_handler(bridge):
                 "workerRunning": process is not None and process.poll() is None,
                 "busy": bridge.jobs.busy,
                 "platform": sys.platform,
+                "agentApiVersion": agent.API_VERSION,
+                "agentSessions": len(bridge.agent.session_list()),
+                "legacyPluginVersion": bridge.agent.legacy_version,
+                "agentHint": "Ready" if bridge.agent.session_list() else "Open Studio and allow Prism localhost access. After a plugin upgrade, restart Studio to load agent support.",
             }
+
+        def agent_sessions(self):
+            return 200, {"apiVersion": agent.API_VERSION, "sessions": bridge.agent.session_list()}
+
+        def agent_register(self):
+            return 200, bridge.agent.register(self.read_json())
+
+        def agent_poll(self):
+            return 200, bridge.agent.poll(self.read_json())
+
+        def agent_complete(self):
+            return 202, bridge.agent.complete(self.read_json())
+
+        def agent_submit(self):
+            return 202, bridge.agent.submit(self.read_json())
+
+        def agent_job(self, identifier):
+            return 200, bridge.agent.get(identifier)
+
+        def agent_disconnect(self):
+            body = self.read_json()
+            with bridge.agent.lock:
+                session = bridge.agent.sessions.get(body.get("session"))
+                if session:
+                    session["seen"] = -float("inf")
+                bridge.agent.expire()
+            return 200, {"ok": True}
 
         def get_schema(self):
             return 200, schema.schema()
@@ -296,6 +334,7 @@ def make_handler(bridge):
         def update_status(self):
             query = parse_qs(urlsplit(self.path).query)
             plugin_version = (query.get("plugin") or [None])[0]
+            bridge.agent.legacy_version = plugin_version
             force = (query.get("force") or ["0"])[0] == "1"
             return 200, bridge.updates.status(plugin_version, force)
 
@@ -342,6 +381,12 @@ def make_handler(bridge):
             return 200, {"folder": chosen, "config": bridge.store.update_config({"outputFolder": chosen})}
 
     ROUTES = {
+        ("GET", "/agent/v1/sessions"): Handler.agent_sessions,
+        ("POST", "/agent/v1/sessions"): Handler.agent_register,
+        ("DELETE", "/agent/v1/sessions"): Handler.agent_disconnect,
+        ("POST", "/agent/v1/poll"): Handler.agent_poll,
+        ("POST", "/agent/v1/complete"): Handler.agent_complete,
+        ("POST", "/agent/v1/jobs"): Handler.agent_submit,
         ("GET", "/status"): Handler.status,
         ("GET", "/schema"): Handler.get_schema,
         ("GET", "/fonts"): Handler.get_fonts,
@@ -398,4 +443,5 @@ def serve(store, port):
     finally:
         httpd.shutdown()
         httpd.server_close()
+        bridge.agent.closed = True
         bridge.worker.close()

@@ -46,6 +46,10 @@ function Invoke-PrismInstaller {
 		Write-Step "Removing startup script..."
 		& schtasks /End /TN Prism *> $null
 		& schtasks /Delete /TN Prism /F *> $null
+		$cliPath = Join-Path $env:LOCALAPPDATA "Prism\bin\prism.cmd"
+		if ((Test-Path $cliPath) -and ((Get-Content -Raw $cliPath) -match 'Prism managed CLI launcher')) {
+			Remove-Item -Force $cliPath
+		}
 		Write-Step "Removing backend..."
 		foreach ($folder in @("backend", ".backend-previous", "cache")) {
 			Remove-Item -Recurse -Force (Join-Path $installDir $folder) -ErrorAction SilentlyContinue
