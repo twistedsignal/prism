@@ -1,0 +1,49 @@
+local fs = require('@lune/fs')
+local luau = require('@lune/luau')
+local roblox = require('@lune/roblox')
+local editableCalls, metadataCalls = 0, 0
+local services = {
+    AssetService = {
+        CreateEditableMeshAsync = function() editableCalls += 1; error('Unavailable') end,
+        CreateEditableImageAsync = function() editableCalls += 1; error('Unavailable') end,
+    },
+    MarketplaceService = { GetProductInfoAsync = function(_, id)
+        metadataCalls += 1
+        return { Creator = { CreatorType = 'User', CreatorTargetId = if id == 123 then 99 else 42 } }
+    end },
+    StudioService = { GetUserId = function() return 42 end },
+}
+local content = function(id) return { SourceType = 'Uri', Uri = 'rbxassetid://' .. tostring(id) } end
+local part = {
+    Name = 'Handle', Transparency = 0, Color = roblox.Color3.new(1, 1, 1),
+    Size = roblox.Vector3.one, MeshSize = roblox.Vector3.one, CFrame = roblox.CFrame.identity,
+    MeshContent = content(123), TextureContent = content(123),
+    IsA = function(_, class) return class == 'BasePart' or class == 'MeshPart' or class == 'PVInstance' end,
+    GetDescendants = function() return {} end, GetChildren = function() return {} end,
+    FindFirstChildWhichIsA = function() return nil end,
+    GetPivot = function() return roblox.CFrame.identity end,
+}
+local code = fs.readFile('src/Serializer.luau'):gsub('%f[%w]const%f[%W]', 'local')
+local serializer = luau.load(code, { environment = {
+    require = function() return {} end,
+    game = { GetService = function(_, name) return services[name] end, CreatorId = 10, CreatorType = 'User' },
+    typeof = function(value) return if type(value) == 'table' and value.SourceType then 'Content' else typeof(value) end,
+    Enum = { ContentSourceType = { Uri = 'Uri', None = 'None', Object = 'Object' },
+        InfoType = { Asset = 'Asset' }, CreatorType = { Group = 'Group' },
+        PartType = { Block = 'Block', Ball = 'Ball', Cylinder = 'Cylinder', Wedge = 'Wedge', CornerWedge = 'CornerWedge' },
+        MeshType = { Brick = 'Brick', Sphere = 'Sphere', Cylinder = 'Cylinder', Wedge = 'Wedge', Head = 'Head' } },
+    Vector3 = roblox.Vector3, CFrame = roblox.CFrame,
+} })()
+local result = serializer.serialize(part)
+assert(result.payload.parts[1].mesh.assetId == '123')
+assert(result.payload.parts[1].texture.assetId == '123')
+assert(editableCalls == 0 and metadataCalls == 1, 'Foreign ownership must bypass editable reads')
+serializer.serialize(part)
+assert(editableCalls == 0 and metadataCalls == 1, 'Known ownership must be reused')
+part.MeshContent = content(456)
+part.TextureContent = content(456)
+serializer.serialize(part)
+assert(editableCalls == 2, 'Owned assets must still try both editable APIs')
+serializer.serialize(part)
+assert(editableCalls == 2, 'Failed editable reads must be remembered')
+print('Ownership routing and failed-read cache checks passed')

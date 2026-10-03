@@ -382,7 +382,8 @@ const function create(plugin: Plugin, bridge: Bridge)
 		return if model then { model } else {}
 	end
 
-	const function applyToTargets(change: (Types.Settings) -> ())
+	local cameraToken = 0
+	const function applyToTargets(change: (Types.Settings) -> (), deferPreview: boolean?)
 		const affected = targets()
 		for _, model in affected do
 			const settings = cloneSettings(model.settings())
@@ -394,7 +395,28 @@ const function create(plugin: Plugin, bridge: Bridge)
 		if model then
 			rememberSettings(model.settings())
 		end
-		requestPreview()
+		cameraToken += 1
+		if deferPreview then
+			const token = cameraToken
+			task.delay(0.12, function()
+				if not destroyed and cameraToken == token then
+					requestPreview()
+				end
+			end)
+		else
+			requestPreview()
+		end
+	end
+
+	const function setCamera(values: { [string]: number })
+		activePreset(nil)
+		applyToTargets(function(settings)
+			for _, key in { "cameraRotation", "cameraElevation", "zoom" } do
+				if values[key] ~= nil then
+					settings[key] = values[key]
+				end
+			end
+		end, true)
 	end
 
 	const function setValue(key: string, value: any)
@@ -711,6 +733,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		useSelection = useSelection,
 		select = select,
 		setValue = setValue,
+		setCamera = setCamera,
 		resetToDefaults = resetToDefaults,
 		copyToAll = copyToAll,
 		applyPreset = applyPreset,

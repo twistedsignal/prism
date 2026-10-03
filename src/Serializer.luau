@@ -2,6 +2,8 @@
 -- prefer editable content, then send asset references for backend recovery.
 const AssetService = game:GetService("AssetService")
 const Base64 = require("./Base64")
+const MarketplaceService = game:GetService("MarketplaceService")
+const StudioService = game:GetService("StudioService")
 
 const YIELD_EVERY = 3000
 const PERMISSION_MESH_WARNING = "Mesh has no readable geometry or downloadable asset ID; using a box"
@@ -128,6 +130,49 @@ const function assetId(content: Content?): string?
 	return if id and tonumber(id) and tonumber(id) > 0 then id else nil
 end
 
+-- Asset ownership and failed editable reads are remembered for this Studio session.
+const ownership: { [string]: boolean } = {}
+const failedMeshes: { [string]: number } = {}
+const failedImages: { [string]: number } = {}
+const meshCache: { [string]: { [string]: any } } = {}
+const imageCache: { [string]: { width: number, height: number, pixels: string } } = {}
+local cachedBytes = 0
+const function remember(cache: { [string]: any }, key: string, value: any, bytes: number)
+	if bytes > 32 * 1024 * 1024 then
+		return
+	end
+	if cachedBytes + bytes > 64 * 1024 * 1024 then
+		table.clear(meshCache)
+		table.clear(imageCache)
+		cachedBytes = 0
+	end
+	cache[key] = value
+	cachedBytes += bytes
+end
+
+const function skipEditable(content: Content): boolean
+	const id = assetId(content)
+	if not id then
+		return false
+	end
+	if ownership[id] == nil then
+		const ok, info = pcall(function()
+			return MarketplaceService:GetProductInfoAsync(tonumber(id) :: number, Enum.InfoType.Asset)
+		end)
+		if not ok or not info.Creator then
+			return false -- Unknown ownership still gets a normal editable attempt.
+		end
+		const creator = info.Creator
+		const creatorId = tonumber(creator.CreatorTargetId or creator.CreatorTargetID or creator.Id)
+		const userOk, userId = pcall(function()
+			return StudioService:GetUserId()
+		end)
+		ownership[id] = (creator.CreatorType == "User" and userOk and creatorId == userId)
+			or (creatorId == game.CreatorId and creator.CreatorType == (if game.CreatorType == Enum.CreatorType.Group then "Group" else "User"))
+	end
+	return ownership[id] == false
+end
+
 const function writeVector(target: buffer, offset: number, value: Vector3)
 	buffer.writef32(target, offset, value.X)
 	buffer.writef32(target, offset + 4, value.Y)
@@ -194,21 +239,40 @@ const function loadMesh(content: Content?): (EditableMesh?, boolean)
 end
 
 const function meshData(content: Content?): { [string]: any }?
+	const id = assetId(content)
+	if id and meshCache[id] then
+		return table.clone(meshCache[id])
+	end
+	if content and id and ((failedMeshes[id] or 0) > os.clock() or skipEditable(content)) then
+		return { assetId = id }
+	end
 	const mesh, owned = loadMesh(content)
 	if mesh then
 		const ok, data = pcall(readEditableMesh, mesh)
 		if owned then
 			mesh:Destroy()
 		end
-		if ok then
-			return data
+		if ok and data.positions and #data.positions > 0 then
+			if id then
+				remember(meshCache, id, data, #data.positions + #(data.uvs or "") + #(data.normals or ""))
+			end
+			return table.clone(data)
 		end
 	end
-	const id = assetId(content)
+	if id then
+		failedMeshes[id] = os.clock() + 300
+	end
 	return if id then { assetId = id } else nil
 end
 
 const function loadImage(content: Content): ({ width: number, height: number, pixels: string }?, string?)
+	const id = assetId(content)
+	if id and imageCache[id] then
+		return imageCache[id], nil
+	end
+	if id and ((failedImages[id] or 0) > os.clock() or skipEditable(content)) then
+		return nil, "asset requires backend recovery"
+	end
 	local image: EditableImage? = nil
 	local owned = false
 	if content.SourceType == Enum.ContentSourceType.Object then
@@ -221,12 +285,18 @@ const function loadImage(content: Content): ({ width: number, height: number, pi
 			return AssetService:CreateEditableImageAsync(content)
 		end)
 		if not ok then
+			if id then
+				failedImages[id] = os.clock() + 300
+			end
 			return nil, if string.find(tostring(result), "permission") then "no permission" else tostring(result)
 		end
 		image = result
 		owned = true
 	end
 	if image == nil then
+		if id then
+			failedImages[id] = os.clock() + 300
+		end
 		return nil, "unsupported texture"
 	end
 	const size = image.Size
@@ -237,9 +307,16 @@ const function loadImage(content: Content): ({ width: number, height: number, pi
 		image:Destroy()
 	end
 	if not ok then
+		if id then
+			failedImages[id] = os.clock() + 300
+		end
 		return nil, tostring(pixels)
 	end
-	return { width = size.X, height = size.Y, pixels = Base64.encode(pixels) }, nil
+	const result = { width = size.X, height = size.Y, pixels = Base64.encode(pixels) }
+	if id then
+		remember(imageCache, id, result, #result.pixels)
+	end
+	return result, nil
 end
 
 type Context = {
@@ -289,6 +366,95 @@ const function surfaceTexture(context: Context, part: BasePart): { id: string, m
 		return addTexture(context, contentOf(appearance, "ColorMapContent", "ColorMap"), mode)
 	end
 	return nil
+end
+
+const LIMBS = {
+	Torso = { "torso", "torso" }, UpperTorso = { "torso", "torso" }, LowerTorso = { "torso", "torso" },
+	["Right Arm"] = { "right", "arm" }, ["Left Arm"] = { "left", "arm" },
+	["Right Leg"] = { "right", "leg" }, ["Left Leg"] = { "left", "leg" },
+	RightUpperArm = { "right", "arm" }, RightLowerArm = { "right", "arm" }, RightHand = { "right", "arm" },
+	LeftUpperArm = { "left", "arm" }, LeftLowerArm = { "left", "arm" }, LeftHand = { "left", "arm" },
+	RightUpperLeg = { "right", "leg" }, RightLowerLeg = { "right", "leg" }, RightFoot = { "right", "leg" },
+	LeftUpperLeg = { "left", "leg" }, LeftLowerLeg = { "left", "leg" }, LeftFoot = { "left", "leg" },
+}
+
+const function appearanceLayers(context: Context, part: BasePart): { any }
+	const layers = {}
+	const function add(content: Content?, properties: { [string]: any })
+		const texture = addTexture(context, content, "alpha")
+		if texture then
+			const layer: any = table.clone(texture)
+			for key, value in properties do
+				layer[key] = value
+			end
+			table.insert(layers, layer)
+		end
+	end
+	const limb = LIMBS[part.Name]
+	const rig = part.Parent
+	if limb and rig and rig:FindFirstChildOfClass("Humanoid") then
+		local sequence = { part.Name }
+		if string.find(part.Name, "Torso") and part.Name ~= "Torso" then
+			sequence = { "UpperTorso", "LowerTorso" }
+		elseif not string.find(part.Name, " ") and limb[2] ~= "torso" then
+			const side = if limb[1] == "right" then "Right" else "Left"
+			const kind = if limb[2] == "arm" then "Arm" else "Leg"
+			sequence = { side .. "Upper" .. kind, side .. "Lower" .. kind, side .. (if kind == "Arm" then "Hand" else "Foot") }
+		end
+		local total, before = 0, 0
+		local reached = false
+		for _, name in sequence do
+			const segment = rig:FindFirstChild(name)
+			if segment and segment:IsA("BasePart") then
+				if segment == part then
+					reached = true
+				end
+				if not reached then
+					before += segment.Size.Y
+				end
+				total += segment.Size.Y
+			end
+		end
+		const range = { before / math.max(total, 0.001), (before + part.Size.Y) / math.max(total, 0.001) }
+		-- Pants underneath shirts, then T-shirt graphics, as Studio layers them.
+		for _, clothing in rig:GetChildren() do
+			if clothing:IsA("Pants") and limb[2] ~= "arm" then
+				add(contentOf(clothing, "PantsTemplateContent", "PantsTemplate"),
+					{ region = limb[1], range = range, tint = { clothing.Color3.R, clothing.Color3.G, clothing.Color3.B } })
+			end
+		end
+		for _, clothing in rig:GetChildren() do
+			if clothing:IsA("Shirt") and limb[2] ~= "leg" then
+				add(contentOf(clothing, "ShirtTemplateContent", "ShirtTemplate"),
+					{ region = limb[1], range = range, tint = { clothing.Color3.R, clothing.Color3.G, clothing.Color3.B } })
+			end
+		end
+		for _, clothing in rig:GetChildren() do
+			if clothing:IsA("ShirtGraphic") and limb[2] == "torso" then
+				add(contentOf(clothing, "GraphicContent", "Graphic"), { face = "Front", range = range,
+					tint = { clothing.Color3.R, clothing.Color3.G, clothing.Color3.B }, graphic = true })
+			end
+		end
+	end
+	local decals = {}
+	for _, child in part:GetChildren() do
+		if child:IsA("Decal") and child.Transparency < 1 then
+			table.insert(decals, child)
+		end
+	end
+	table.sort(decals, function(a, b)
+		return a.ZIndex < b.ZIndex
+	end)
+	for _, decal in decals do
+		const properties: { [string]: any } = { face = decal.Face.Name, transparency = decal.Transparency,
+			tint = { decal.Color3.R, decal.Color3.G, decal.Color3.B } }
+		if decal:IsA("Texture") then
+			properties["repeat"] = { decal.StudsPerTileU, decal.StudsPerTileV }
+			properties.offset = { decal.OffsetStudsU, decal.OffsetStudsV }
+		end
+		add(contentOf(decal, "ColorMapContent", "Texture") or contentOf(decal, "TextureContent", "Texture"), properties)
+	end
+	return layers
 end
 
 const function serializePart(context: Context, part: BasePart, relative: CFrame): { [string]: any }?
@@ -358,6 +524,7 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 		entry.kind = "block"
 	end
 
+	entry.layers = appearanceLayers(context, part)
 	if entry.warning then
 		warnOnce(context, entry.warning)
 	end

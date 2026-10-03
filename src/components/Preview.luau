@@ -4,6 +4,9 @@ const vide = require("../vide")
 const Theme = require("./Theme")
 const Segmented = require("./Segmented")
 const Types = require("../Types")
+const Overlay = require("../Overlay")
+const CameraControls = require("../CameraControls")
+const Spinner = require("./Spinner")
 
 const new = vide.create
 const source = vide.source
@@ -23,6 +26,8 @@ export type Props = {
 	previewState: () -> string,
 	previewError: () -> string?,
 	connected: () -> boolean,
+	setCamera: ({ [string]: number }) -> (),
+	busy: () -> string?,
 }
 
 -- world-aligned bounds of every part in an instance.
@@ -166,6 +171,9 @@ const function Preview(props: Props): Frame
 		if model.state() == "serializing" then
 			return "Reading model…"
 		end
+		if model.state() == "sending" then
+			return "Loading assets…"
+		end
 		if model.state() == "error" then
 			return model.warning() or "This model could not be read."
 		end
@@ -244,6 +252,41 @@ const function Preview(props: Props): Frame
 					return if props.previewState() == "rendering" then 0.15 else 0
 				end,
 			}),
+			new("TextButton")({
+				Name = "CameraControls",
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				Text = "",
+				AutoButtonColor = false,
+				ZIndex = 3,
+				InputBegan = function(input: InputObject)
+					const model = props.currentModel()
+					if model == nil or input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+						return
+					end
+					local previous = Vector2.new(input.Position.X, input.Position.Y)
+					Overlay.drag(input, function(position)
+						if props.currentModel() ~= model then
+							return
+						end
+						const delta = position - previous
+						previous = position
+						props.setCamera(CameraControls.orbit(model.settings(), delta.X, delta.Y))
+					end)
+				end,
+				InputChanged = function(input: InputObject)
+					const model = props.currentModel()
+					if model and input.UserInputType == Enum.UserInputType.MouseWheel then
+						props.setCamera(CameraControls.zoom(model.settings(), input.Position.Z))
+					end
+				end,
+			}),
+			Spinner(function()
+				const model = props.currentModel()
+				return model ~= nil and (model.state() == "serializing" or model.state() == "sending"
+					or (props.view() == "blender" and props.previewState() == "rendering")
+					or props.busy() == "Rendering" or props.busy() == "Uploading")
+			end),
 			vide.show(function()
 				return props.view() == "3d"
 			end, function()

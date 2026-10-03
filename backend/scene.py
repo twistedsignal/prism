@@ -385,7 +385,14 @@ def build(payload, directory):
 
         position = cframe[:3]
         r = cframe[3:]
-        material = material_for(color_of(part), transparency, part.get("texture"))
+        texture = part.get("texture")
+        if part.get("layers"):
+            import appearance
+            corners, baked = appearance.bake(corners, size, color_of(part), texture, part["layers"], textures)
+            baked_id = f"appearance:{index}"
+            textures[baked_id] = baked
+            texture = {"id": baked_id, "mode": "alpha"}
+        material = material_for(color_of(part), transparency, texture)
         face_lines.append(f"usemtl {material}")
         positions, uvs, normals = [], [], []
         for point, uv, normal in corners:
@@ -444,10 +451,12 @@ class SceneCache:
         for part in payload["parts"]:
             if not isinstance(part, dict):
                 raise SceneError("Part must be an object")
-            for key in ("mesh", "texture"):
-                entry = part.get(key)
+            if part.get("layers") and (not isinstance(part["layers"], list) or len(part["layers"]) > 64):
+                raise SceneError("Part layers must be an array of at most 64 appearances")
+            entries = [part.get("mesh"), part.get("texture"), *(part.get("layers") or [])]
+            for entry in entries:
                 if entry is not None and not isinstance(entry, dict):
-                    raise SceneError(f"Part {key} must be an object")
+                    raise SceneError("Part mesh, texture and layers must be objects")
                 if entry and "assetId" in entry:
                     import assets
                     try:
@@ -459,7 +468,7 @@ class SceneCache:
             payload, recovery_warnings, incomplete = self.resolver.resolve(payload)
         # Resolved bytes change the ID after credential repair, invalidating renderer objects.
         resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        identifier = scene_id(b"resolver-v1:" + resolved)
+        identifier = scene_id(b"appearance-v4:" + resolved)
         if incomplete:
             identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier

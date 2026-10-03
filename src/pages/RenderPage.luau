@@ -403,6 +403,8 @@ const function RenderPage(props: Props): Frame
 				previewImage = store.previewImage,
 				previewState = store.previewState,
 				previewError = store.previewError,
+				setCamera = store.setCamera,
+				busy = store.busy,
 				connected = props.connected,
 			}),
 		}),

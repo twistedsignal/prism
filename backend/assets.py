@@ -2,13 +2,17 @@
 
 import base64
 import copy
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import time
+import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import mesh_asset
@@ -133,7 +137,9 @@ def read_public(identifier):
 
 
 def valid_content(data):
-    return data.startswith((b"version ", b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff"))
+    return data.startswith(
+        (b"version ", b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"<roblox", b"<?xml")
+    )
 
 
 class Resolver:
@@ -141,6 +147,71 @@ class Resolver:
         self.root = Path(root) / "assets"
         self.root.mkdir(parents=True, exist_ok=True)
         self.raven_path = raven_path
+        self.decoded = {}
+        self.decoded_bytes = 0
+        self.decoded_sizes = {}
+        self.routes_path = self.root / "routes.json"
+        try:
+            self.routes = json.loads(self.routes_path.read_text())
+            if not isinstance(self.routes, dict):
+                self.routes = {}
+        except (OSError, ValueError):
+            self.routes = {}
+
+    def remember_route(self, identifier, seconds):
+        self.routes = {
+            key: value
+            for key, value in self.routes.items()
+            if isinstance(value, (int, float)) and value > time.time()
+        }
+        self.routes[identifier] = time.time() + seconds
+        temporary = self.routes_path.with_suffix(".tmp")
+        try:
+            temporary.write_text(json.dumps(self.routes))
+            temporary.replace(self.routes_path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def decode_cached(self, identifier, kind, loader):
+        data = self.download(identifier)
+        digest = hashlib.sha256(data).hexdigest()
+        key = (identifier, kind, digest)
+        if key in self.decoded:
+            return self.decoded[key]
+        path = self.root / f"{identifier}.{kind}.json"
+        try:
+            cached = (
+                json.loads(path.read_text())
+                if path.stat().st_size <= 128 * 1024 * 1024
+                else {}
+            )
+        except (OSError, ValueError):
+            cached = {}
+        if cached.get("digest") == digest and "data" in cached:
+            result = cached["data"]
+        else:
+            result = loader(data)
+        serialized = json.dumps({"digest": digest, "data": result})
+        weight = len(serialized)
+        if weight <= 128 * 1024 * 1024:
+            temporary = path.with_suffix(".tmp")
+            try:
+                temporary.write_text(serialized)
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        if weight <= 64 * 1024 * 1024:
+            while self.decoded and (
+                self.decoded_bytes + weight > 64 * 1024 * 1024
+                or len(self.decoded) >= 32
+            ):
+                removed = next(iter(self.decoded))
+                self.decoded.pop(removed)
+                self.decoded_bytes -= self.decoded_sizes.pop(removed)
+            self.decoded[key] = result
+            self.decoded_sizes[key] = weight
+            self.decoded_bytes += weight
+        return result
 
     def download(self, identifier):
         identifier = asset_id(identifier)
@@ -157,7 +228,19 @@ class Resolver:
         temporary = Path(temporary)
         try:
             try:
-                data = read_public(identifier)
+                if self.routes.get(identifier, 0) > time.time():
+                    raise AssetError("Legacy access is known to be unavailable")
+                try:
+                    data = read_public(identifier)
+                except urllib.error.HTTPError as error:
+                    error.close()
+                    self.remember_route(
+                        identifier, 86400 if error.code in (400, 401, 403, 404) else 60
+                    )
+                    raise
+                except OSError:
+                    self.remember_route(identifier, 60)
+                    raise
                 if not valid_content(data):
                     raise AssetError(
                         "Legacy delivery returned unsupported asset content"
@@ -207,11 +290,52 @@ class Resolver:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def texture(self, identifier):
+    def mesh(self, identifier):
+        return self.decode_cached(identifier, "mesh", mesh_asset.decode)
+
+    def texture(self, identifier, depth=0):
+        if depth > 4:
+            raise AssetError(
+                "Texture asset references form a cycle or exceed four levels"
+            )
+        return self.decode_cached(
+            identifier,
+            "texture",
+            lambda data: self.load_texture(identifier, data, depth),
+        )
+
+    def load_texture(self, identifier, data, depth):
+        if data.startswith((b"<roblox", b"<?xml")):
+            try:
+                root = ET.fromstring(data)
+                for content in root.iter("Content"):
+                    if content.get("name") in (
+                        "Texture",
+                        "TextureContent",
+                        "TextureId",
+                        "TextureID",
+                        "ShirtTemplate",
+                        "ShirtTemplateContent",
+                        "PantsTemplate",
+                        "PantsTemplateContent",
+                        "Graphic",
+                        "GraphicContent",
+                        "ColorMap",
+                        "ColorMapContent",
+                    ):
+                        match = re.search(
+                            r"(?:rbxassetid://|[?&]id=)([1-9][0-9]*)",
+                            content.findtext("url", ""),
+                            re.IGNORECASE,
+                        )
+                        if match:
+                            return self.texture(match.group(1), depth + 1)
+            except ET.ParseError as error:
+                raise AssetError("Invalid Roblox texture asset document") from error
+            raise AssetError("Asset document has no downloadable image reference")
         import bpy
         import numpy as np
 
-        self.download(identifier)
         image = bpy.data.images.load(str(self.root / identifier), check_existing=False)
         try:
             image.colorspace_settings.name = "Non-Color"
@@ -248,9 +372,7 @@ class Resolver:
                     if identifier in failures:
                         raise AssetError(failures[identifier])
                     if identifier not in mesh_results:
-                        mesh_results[identifier] = mesh_asset.decode(
-                            self.download(identifier)
-                        )
+                        mesh_results[identifier] = self.mesh(identifier)
                     part["mesh"] = {**mesh, **mesh_results[identifier]}
                 except (AssetError, mesh_asset.MeshError, OSError, ValueError) as error:
                     if isinstance(error, mesh_asset.MeshError):
@@ -259,9 +381,17 @@ class Resolver:
                     warnings.append(f"Mesh {identifier}: {error}; using a box")
                     part["kind"] = "block"
                     incomplete = True
-            texture = part.get("texture") or {}
-            identifier = texture.get("assetId")
-            if identifier:
+            references = [("texture", part.get("texture"))]
+            references += [("layer", layer) for layer in part.get("layers", [])]
+            retained_layers = []
+            for kind, texture in references:
+                if not texture:
+                    continue
+                identifier = texture.get("assetId")
+                if not identifier:
+                    if kind == "layer":
+                        retained_layers.append(texture)
+                    continue
                 try:
                     if identifier in failures:
                         raise AssetError(failures[identifier])
@@ -269,10 +399,14 @@ class Resolver:
                         texture_results[identifier] = self.texture(identifier)
                     textures[identifier] = texture_results[identifier]
                     texture["id"] = identifier
+                    if kind == "layer":
+                        retained_layers.append(texture)
                 except (AssetError, OSError, ValueError, RuntimeError) as error:
                     (self.root / identifier).unlink(missing_ok=True)
                     failures[identifier] = str(error)
                     warnings.append(f"Texture {identifier}: {error}; using part color")
-                    part.pop("texture", None)
+                    if kind == "texture":
+                        part.pop("texture", None)
                     incomplete = True
+            part["layers"] = retained_layers
         return payload, list(dict.fromkeys(warnings)), incomplete

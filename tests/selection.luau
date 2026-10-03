@@ -105,6 +105,15 @@ assert(store.models()[3].state() == "sending")
 assert(store.models()[4].state() == "sending")
 assert(table.find(serialized, third) and table.find(serialized, fourth))
 
+store.mode("this")
+store.setCamera({ cameraRotation = 42, cameraElevation = 20, zoom = 1.4, ignored = 99 })
+assert(store.currentModel().settings().cameraRotation == 42)
+assert(store.currentModel().settings().ignored == nil)
+store.mode("all")
+store.setCamera({ zoom = 2.4 })
+for _, model in store.models() do
+	assert(model.settings().zoom == 2.4, "Camera gestures must update real render settings in the selected scope")
+end
 store.destroy()
 store.useSelection({ { Name = "After cleanup" } })
 assert(#store.models() == 4, "Disposed stores must ignore selection events")

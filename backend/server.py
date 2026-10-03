@@ -19,6 +19,7 @@ import schema
 import updater
 import uploader
 from jobs import JobQueue, Superseded
+from render_cache import RenderCache
 from scene import SceneCache, SceneError
 
 import assets
@@ -50,6 +51,7 @@ class Bridge:
             config.cache_dir(), lambda: self.store.get_config()["ravenPath"],
         ))
         self.renderer = None
+        self.render_cache = RenderCache()
         self.updates = updater.Checker()
         self.updating = threading.Lock()
 
@@ -60,8 +62,14 @@ class Bridge:
             self.renderer = renderer.Renderer()
         if not self.scenes.exists(scene_id):
             raise HttpError(404, "Unknown scene; send it again")
-        key = self.renderer.load(self.scenes.path(scene_id))
-        return self.renderer.render(key, settings, size, aa)
+        normalized = schema.normalize(settings)
+        cache_key = (scene_id, json.dumps(normalized, sort_keys=True), size, aa)
+        pixels = self.render_cache.get(cache_key)
+        if pixels is None:
+            key = self.renderer.load(self.scenes.path(scene_id))
+            pixels = self.renderer.render(key, normalized, size, aa)
+            self.render_cache.put(cache_key, pixels)
+        return pixels
 
     def output_path(self, folder, name, index, overwrite, pattern):
         stem = safe_filename(pattern.replace("{name}", safe_filename(name)).replace("{index}", str(index)))
