@@ -15,7 +15,7 @@ export type Section = {
 }
 
 -- nested sections are groups inside another section: a shorter, lighter header.
-const function Section(parent: Instance, text: string, initialBodyHeight: number, collapsed: boolean?, nested: boolean?): Section
+const function Section(parent: Instance, text: string, initialBodyHeight: number, collapsed: boolean?, nested: boolean?, forceExpanded: (() -> boolean)?): Section
 	const bodyHeight = source(initialBodyHeight)
 	const expanded = source(not collapsed)
 	local body: Frame
@@ -78,7 +78,7 @@ const function Section(parent: Instance, text: string, initialBodyHeight: number
 	}) :: Frame
 
 	effect(function()
-		const isExpanded = expanded()
+		const isExpanded = expanded() or (forceExpanded ~= nil and forceExpanded())
 		Theme.tween(body, {
 			Size = UDim2.new(1, 0, 0, if isExpanded then bodyHeight() else 0),
 		})

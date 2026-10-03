@@ -19,6 +19,7 @@ const Preview = require("../components/Preview")
 const Modal = require("../components/Modal")
 const Store = require("../Store")
 const Requirements = require("../Requirements")
+const SettingsSearch = require("../SettingsSearch")
 
 const new = vide.create
 const source = vide.source
@@ -247,7 +248,7 @@ const function promptPresetName(onSave: (string) -> ())
 	})
 end
 
-const function SettingsSections(store: Store.Store, schema: () -> Types.Schema): Frame
+const function SettingsSections(store: Store.Store, schema: () -> Types.Schema, query: () -> string): Frame
 	const settings = function(): Types.Settings
 		const model = store.currentModel()
 		return if model then model.settings() else schema().defaults
@@ -265,12 +266,8 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 		}),
 	}) :: Frame
 
-	const function bindVisibility(instance: GuiObject, requires: string?)
-		if requires then
-			effect(function()
-				instance.Visible = Requirements.met(requires, settings())
-			end)
-		end
+	const searching = function(): boolean
+		return string.match(query(), "%S") ~= nil
 	end
 
 	const function buildRow(setting: Types.SettingSchema, rowIndex: number): Frame
@@ -388,13 +385,13 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 				end,
 			})
 		end
-		bindVisibility(row, setting.requires)
 		return row
 	end
 
 	-- adds settings and nested groups to a section body; groups are collapsible sub-sections.
-	local buildItems: (Instance, { any }) -> ()
-	buildItems = function(parent: Instance, items: { any })
+	local buildItems: (Instance, { any }, string) -> (() -> boolean)
+	buildItems = function(parent: Instance, items: { any }, context: string)
+		const matches = {}
 		for index, item in items do
 			if item.type == "group" then
 				const group = item :: Types.GroupSchema
@@ -409,30 +406,56 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 					new("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
 					new("UIPadding")({ PaddingLeft = UDim.new(0, 10) }),
 				}) :: Frame
-				const sub = Section(holder, group.label, 0, group.collapsed, true)
+				const sub = Section(holder, group.label, 0, group.collapsed, true, searching)
 				sub.header.LayoutOrder = 1
 				sub.body.LayoutOrder = 2
 				const function updateHeight()
 					sub.setHeight(sub.layout.AbsoluteContentSize.Y)
 				end
 				cleanup(sub.layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateHeight))
-				buildItems(sub.body, group.settings)
+				const childrenMatch = buildItems(sub.body, group.settings, `{context} {group.label}`)
+				const visible = function(): boolean
+					return Requirements.met(group.requires, settings()) and childrenMatch()
+				end
+				table.insert(matches, visible)
+				effect(function()
+					holder.Visible = visible()
+				end)
 				task.defer(updateHeight)
-				bindVisibility(holder, group.requires)
 			elseif not item.hidden then
-				buildRow(item :: Types.SettingSchema, index).Parent = parent
+				const setting = item :: Types.SettingSchema
+				const row = buildRow(setting, index)
+				row.Parent = parent
+				const text = `{context} {setting.label} {setting.key} {setting.description or ""}`
+				const visible = function(): boolean
+					return Requirements.met(setting.requires, settings()) and SettingsSearch.matches(query(), text)
+				end
+				table.insert(matches, visible)
+				effect(function()
+					row.Visible = visible()
+				end)
 			end
+		end
+		return function(): boolean
+			for _, matchesQuery in matches do
+				if matchesQuery() then
+					return true
+				end
+			end
+			return false
 		end
 	end
 
+	const sectionMatches = {}
 	for sectionIndex, sectionSchema in schema().sections do
-		const section = Section(container, sectionSchema.label, 0, sectionSchema.collapsed)
+		const section = Section(container, sectionSchema.label, 0, sectionSchema.collapsed, false, searching)
 		section.header.LayoutOrder = sectionIndex * 2
 		section.body.LayoutOrder = sectionIndex * 2 + 1
 		const function updateHeight()
 			section.setHeight(section.layout.AbsoluteContentSize.Y)
 		end
 		cleanup(section.layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateHeight))
+		local syncRow: Frame?
 		if sectionSchema.id == "lighting" then
 			const row = BaseSetting({
 				name = "Sync Lighting",
@@ -441,6 +464,7 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 				parent = section.body,
 				description = "Copy this place's sun/moon, ambient light, exposure and shadows for the current model view. Sky, atmosphere and local lights are not reproduced.",
 			})
+			syncRow = row
 			Button({
 				text = "Sync Lighting",
 				size = UDim2.new(1, -16, 0, 28),
@@ -451,9 +475,37 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 				activated = store.syncLighting,
 			}).Parent = row
 		end
-		buildItems(section.body, sectionSchema.settings)
+		const childrenMatch = buildItems(section.body, sectionSchema.settings, sectionSchema.label)
+		const syncMatches = function(): boolean
+			return syncRow ~= nil and SettingsSearch.matches(query(), `{sectionSchema.label} Sync Lighting`)
+		end
+		const visible = function(): boolean
+			return childrenMatch() or syncMatches()
+		end
+		table.insert(sectionMatches, visible)
+		effect(function()
+			section.header.Visible = visible()
+			section.body.Visible = visible()
+			if syncRow then
+				syncRow.Visible = syncMatches()
+			end
+		end)
 		task.defer(updateHeight)
 	end
+
+	const empty = label({ text = "No matching settings", size = UDim2.new(1, -16, 0, 34) })
+	empty.LayoutOrder = #sectionMatches * 2 + 2
+	empty.Parent = container
+	effect(function()
+		local anyMatch = false
+		for _, matchesQuery in sectionMatches do
+			if matchesQuery() then
+				anyMatch = true
+				break
+			end
+		end
+		empty.Visible = searching() and not anyMatch
+	end)
 
 	return container
 end
@@ -464,6 +516,7 @@ const function RenderPage(props: Props): Frame
 	const targets = useTargets(store)
 	const selectedTarget = source(nil :: string?)
 	const leftSize = source(Vector2.new(400, 700))
+	const settingsQuery = source("")
 
 	const wide = function(): boolean
 		return props.rootSize().X >= WIDE_LAYOUT
@@ -738,10 +791,36 @@ const function RenderPage(props: Props): Frame
 			}),
 		}),
 
+		new("TextBox")({
+			Name = "SettingsSearch",
+			Position = UDim2.fromOffset(0, 66),
+			Size = UDim2.new(1, 0, 0, 28),
+			BackgroundColor3 = Theme.INPUT,
+			BorderSizePixel = 0,
+			ClearTextOnFocus = false,
+			PlaceholderText = "Search settings…",
+			PlaceholderColor3 = Theme.SUBTLE,
+			Text = settingsQuery,
+			TextColor3 = Theme.TEXT,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Font = Enum.Font.SourceSans,
+			TextSize = 15,
+			vide.changed("Text", settingsQuery),
+			Theme.stroke(Theme.BORDER),
+			new("UIPadding")({ PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }),
+		}),
+
 		new("ScrollingFrame")({
 			Name = "Settings",
-			Position = UDim2.fromOffset(0, 66),
-			Size = UDim2.new(1, 0, 1, -102),
+			vide.action(function(instance)
+				const scroll = instance :: ScrollingFrame
+				effect(function()
+					settingsQuery()
+					scroll.CanvasPosition = Vector2.zero
+				end)
+			end),
+			Position = UDim2.fromOffset(0, 100),
+			Size = UDim2.new(1, 0, 1, -136),
 			BackgroundColor3 = Theme.DARKER,
 			BorderSizePixel = 0,
 			ScrollBarThickness = 6,
@@ -752,7 +831,7 @@ const function RenderPage(props: Props): Frame
 
 			Theme.stroke(Theme.BORDER),
 			vide.show(store.schema, function(schema)
-				return SettingsSections(store, schema :: any)
+				return SettingsSections(store, schema :: any, settingsQuery)
 			end, function()
 				return label({
 					text = function()

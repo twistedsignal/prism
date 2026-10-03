@@ -168,13 +168,13 @@ local sections = luau.load(uiCode, { environment = {
     require = function(name) return uiModules[name] end,
     game = { GetService = function() return {} end },
     UDim2 = roblox.UDim2, UDim = roblox.UDim, Vector2 = roblox.Vector2,
-    Enum = { AutomaticSize = {Y = 'Y'}, SortOrder = {LayoutOrder = 'LayoutOrder'} },
+    Enum = roblox.Enum,
     task = { defer = function(fn) fn() end },
 } })()
 sections({ currentModel = function() return selectedModel end, busy = function() return busy end,
            syncLighting = function() clicks += 1 end },
          function() return {sections = {{id = 'stance', label = 'Stance', settings = {}},
-                                       {id = 'lighting', label = 'Lighting', settings = {}}}} end)
+                                       {id = 'lighting', label = 'Lighting', settings = {}}}} end, function() return '' end)
 assert(#buttons == 1 and buttons[1].text == 'Sync Lighting' and rows[1].index == 0)
 assert(buttons[1].enabled())
 buttons[1].activated()

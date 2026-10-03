@@ -13,6 +13,7 @@ local vide = {
 	effect = require("../Packages/_Index/centau_vide@0.4.1/vide/src/effect"),
 	cleanup = function() end,
 	changed = function() return {} end,
+	action = function() return {} end,
 	show = function() return {} end,
 	create = function()
 		return function(properties)
