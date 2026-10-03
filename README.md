@@ -4,69 +4,55 @@
   <p>Render Roblox Studio models into icons with Blender, right from a Studio plugin.</p>
 </div>
 
-Prism is a Roblox Studio ↔ Blender bridge. Select models in Studio and tweak the camera, lighting, outline, shadow and glow with a live preview. You can then save the icons to a folder or upload them straight to Roblox.
+Select models in Studio, adjust the camera and effects, then save PNGs or upload them to Roblox. Blender handles the final preview and render.
 
 ## Install
 
-You need [Blender](https://www.blender.org/download/) 4.2 or newer and [Node.js](https://nodejs.org) 20 or newer. The installer sets up [raven](https://github.com/twistedsignal/raven) for uploads, walks you through creating a Roblox API key, starts the Prism backend at login and installs the Studio plugin.
+You need [Blender](https://www.blender.org/download/) 4.2 or newer and [Node.js](https://nodejs.org) 20 or newer. The installer adds the Studio plugin, backend and [Raven](https://github.com/twistedsignal/raven), then helps you set up a Roblox API key for assets and uploads.
 
-**macOS and Linux (including Vinegar):**
+On macOS or Linux, including Vinegar:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/twistedsignal/prism/main/install.sh | bash
 ```
 
-**Windows (PowerShell):**
+On Windows, run this in PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1 | iex
 ```
 
-Prism checks GitHub for new releases. When one is out, the plugin offers to update. The backend then downloads the release, reinstalls itself and the plugin, and restarts. Restart Roblox Studio afterwards to load the new plugin. You can also check from **Settings → Check for updates**, or run the install command again.
+## Use Prism
 
-To uninstall:
+1. Select models, tools, accessories or parts in Studio. Click a card in Prism to work on one of them.
+2. Adjust the camera and settings. Drag the preview to orbit, scroll to zoom, or drag over text in the Blender preview to move it. Choose **This model** or **All** to set the editing scope.
+3. Click **Render** to save PNGs to your output folder. Click **Upload** to send them to Roblox as Decals. Prism shows the image IDs you can use in `ImageLabel.Image`.
+
+The plugin has outlines, shadows, glow, color and depth effects, and text. Presets are saved locally. Prism also remembers a model's settings when you deselect and reselect it.
+
+## Updates and removal
+
+Prism prompts you when a new release is available. After an update, restart Roblox Studio to load the new plugin. You can also use **Settings → Check for updates** or run the installer again.
+
+To uninstall on macOS or Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/twistedsignal/prism/main/install.sh | bash -s -- --uninstall
 ```
 
+To uninstall on Windows:
+
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1))) -Uninstall
 ```
 
-Uninstalling removes the startup entry, backend, cache and plugin. It doesn't need Blender or a network connection, and it leaves raven, your settings and your presets in place.
+Uninstalling removes the plugin, backend and cache. It keeps your settings, presets and Raven installation.
 
-## Using it
+## Common problems
 
-1. Select one or more models, tools, accessories or parts in Studio. Prism shows a card for each selected model. Deselected models drop out of the list, but Prism remembers their settings and restores them when you select them again. Selection changes are ignored while the Prism window is closed.
-2. Click a card to pick a model. Edit **This model** only, or **All** models at once.
-3. Use **3D** for an instant Studio viewport, or **Blender** for the real render. Drag the preview to orbit and scroll to zoom. These gestures update the actual camera settings for the current editing scope. A loading circle shows when Prism is reading or rendering.
-4. **Render** saves PNGs to your output folder. **Upload** sends them to Roblox as Decals and shows the image ids to use in `ImageLabel.Image`. **Open folder** opens the output folder.
-
-### Effects
-
-Settings are organized into sections with collapsible groups inside them. A setting only shows when it matters: for example, **X-ray color** appears once **Enable X-ray** is on, and **FOV** hides while the camera is orthographic. Hidden settings never change the render.
-
-Every effect runs on the finished render, so tweaking one never waits on Blender. The effect sections start collapsed:
-
-- **Adjustments:** saturation, contrast and brightness.
-- **Silhouette:** outline, drop shadow, glow and inner shadow.
-- **Color:** color overlay (RGBA, so its alpha sets the strength), cel shading, heatmap (by brightness or depth), duotone and tritone.
-- **Stylize:** halftone, ordered dither, pixelate (nearest-neighbor), chromatic aberration, CRT and bloom.
-- **Depth:** X-ray, depth tint and depth outlines between overlapping parts.
-- **Vignette:** color, strength and opacity at the image border.
-- **Text:** drawn above every other effect, including the color overlay. Set its X and Y offsets in pixels at 512px, or drag the text in the Blender preview to position it. Drag elsewhere to rotate the camera. Pick the font, size, weight, bold, italic, rotation, letter and line spacing, an RGBA fill with an optional gradient, underline, strikethrough, an outline, a glow and a drop shadow. Make the fill transparent for outline-only text. Type `\n` for a new line. The font list shows Roblox Studio's fonts first, then your system fonts; fonts Roblox also has are previewed in their own typeface. Prism uses a font's own bold and italic faces when it has them, and synthesizes the rest.
-
-Presets are saved on your computer, so they work in every game. The **Settings** tab holds the output folder, file names, render sizes, quality, the default upload creator and the backend port. Changing the port restarts the backend on the new port.
-
-If the header says **HTTP access blocked**, allow Prism to reach `127.0.0.1` under **Plugins → Manage Plugins**.
-
-### Limitations
-
-- Prism first reads meshes and textures through Studio's editable APIs. If Studio cannot read them, the backend tries anonymous Asset Delivery, then Raven with your saved API key. Successful downloads and decoded meshes/images are cached on disk. Known foreign assets skip Studio editable reads. Denied legacy delivery routes are remembered for 24 hours, with temporary network failures retried after a minute; Raven recovery continues immediately. Assets that still cannot be recovered show a warning and use boxes or part color.
-- Plugins can't read union (CSG) geometry, so unions are drawn as boxes.
-- Classic shirts, pants and T-shirts render on R6/R15 body parts. Face decals, other decals and tiled Texture objects are composited over part color or mesh textures, preserving alpha and tint. Custom body shapes use a face projection of the classic template; Studio's layered-clothing cage deformation is not reproduced.
-- Materials tile across parts in studs and are tinted by the part color, like in Studio. Custom MaterialVariants, including MaterialService base-material overrides, render with their own ColorMap and StudsPerTile. Roblox doesn't ship its built-in material textures with Studio, so Prism generates matching detail textures for them (wood grain, planks, bricks, cobblestone, stone, metal, fabric and more). They look close, not identical. Neon is brightened; Plastic, SmoothPlastic and Glass stay plain colors. TextureIDs and SurfaceAppearances replace the material, as in Roblox.
+- If Prism says **HTTP access blocked**, allow it to reach `127.0.0.1` under **Plugins → Manage Plugins**.
+- If an asset cannot be downloaded, Prism shows a warning and uses a box or plain color. Check the API key permissions, then select the model again.
+- Studio plugins cannot read union geometry, so Prism draws unions as boxes.
 
 ## How it works
 
