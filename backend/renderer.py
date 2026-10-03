@@ -1149,7 +1149,7 @@ def render_pixels(directory, objects, minimum_angle, cache=None, key=None, norma
 # TEXT
 # ============================================================
 
-# Settings that change the rasterized text shape; colors and text effects are applied afterwards.
+# Settings that change the rasterized text shape. Position offsets shift its cached mask later.
 TEXT_KEYS = ("text", "textFont", "textSize", "textRotation", "textWeight", "textBold", "textItalic",
              "textUnderline", "textStrikethrough", "textLetterSpacing", "textLineSpacing")
 # Synthetic styles, in units of the font size, when the font has no matching face.
@@ -1328,6 +1328,27 @@ class Renderer:
             self.remove_collection(model["collection"])
             del model
             memory.release()
+
+    def text_bounds(self, settings, size, aa):
+        """Visible text glyph bounds in 512px preview coordinates."""
+        settings = schema.normalize(settings)
+        if "text" not in required_passes(settings):
+            return None
+        text_key = ("text", json.dumps({name: settings[name] for name in TEXT_KEYS}, sort_keys=True), size, aa)
+        mask = self.passes.get(text_key)
+        if mask is None:
+            mask = self.text.render(self.directory.name, settings, size, aa)
+            self.passes.put(text_key, mask)
+        ys, xs = np.nonzero(mask > 0.1)
+        if not len(xs):
+            return None
+        scale = REFERENCE_RESOLUTION / size
+        return {
+            "x": int(xs.min()) * scale + settings["textOffsetX"],
+            "y": (size - 1 - int(ys.max())) * scale + settings["textOffsetY"],
+            "width": (int(xs.max()) - int(xs.min()) + 1) * scale,
+            "height": (int(ys.max()) - int(ys.min()) + 1) * scale,
+        }
 
     @staticmethod
     def remove_collection(collection):

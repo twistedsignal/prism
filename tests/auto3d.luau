@@ -119,11 +119,15 @@ assert(store.previewView() == "3d" and writes == 1, "stale image switched back t
 table.remove(delayed, 1)()
 drain()
 assert(store.previewView() == "blender" and writes == 2)
+store.setTextOffset({ textOffsetX = 36, textOffsetY = -12 })
+assert(store.previewView() == "blender", "Text drag switched Auto-3D to the viewport")
+drain()
+assert(model.settings().textOffsetX == 36 and store.previewView() == "blender")
 -- Coalesced immediate edits also suppress the obsolete image.
 duringRender = function() store.setValue("yaw", 10) end
 store.requestPreview()
 drain()
-assert(writes == 3 and renders == 5)
+assert(writes == 4 and renders == 6)
 store.setAuto3d(false)
 drain()
 assert(saved.PrismAuto3d == false)

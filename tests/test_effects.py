@@ -120,6 +120,17 @@ class EffectsTests(unittest.TestCase):
         np.testing.assert_allclose(output[24, 24], [1, 0, 0, 1], atol=1e-6)
         np.testing.assert_allclose(output[14, 14], [0, 1, 0, 1], atol=1e-6)
 
+    def test_text_offsets_move_cached_mask_in_screen_coordinates(self):
+        pixels = np.zeros((32, 32, 4), dtype=np.float32)
+        text = np.zeros((32, 32), dtype=np.float32)
+        text[16, 16] = 1
+        settings = schema.normalize({"text": "x", "textOffsetX": 32, "textOffsetY": 48,
+                                     "outlineSize": 0, "dropShadow": False})
+        output = effects.post_process_pixels(pixels, settings, 32, passes={"text": text})
+        self.assertEqual(output[13, 18, 3], 1)
+        self.assertEqual(output[16, 16, 3], 0)
+        self.assertEqual(text[16, 16], 1, "Cached glyph mask was mutated")
+
     def test_overlay_alpha_controls_strength(self):
         pixels = self.model()
         settings = schema.normalize({"colorOverlay": True, "colorOverlayColor": "#00000080",

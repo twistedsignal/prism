@@ -54,10 +54,10 @@ class Bridge:
 
     # ---- serialized worker jobs -----------------------------------------
 
-    def render(self, scene_id, settings, size, aa, format="rgba"):
+    def render(self, scene_id, settings, size, aa, format="rgba", text_bounds=False):
         if not self.scenes.exists(scene_id):
             raise HttpError(404, "Unknown scene; send it again")
-        return self.worker.render(scene_id, schema.normalize(settings), size, aa, format)
+        return self.worker.render(scene_id, schema.normalize(settings), size, aa, format, text_bounds=text_bounds)
 
     def output_path(self, folder, name, index, overwrite, pattern):
         stem = safe_filename(pattern.replace("{name}", safe_filename(name)).replace("{index}", str(index)))
@@ -256,10 +256,11 @@ def make_handler(bridge):
                 raise HttpError(400, "sceneId is required")
 
             def work():
-                return bridge.render(scene_id, body.get("settings"), size, settings_config["previewAA"])
+                return bridge.render(scene_id, body.get("settings"), size, settings_config["previewAA"], text_bounds=True)
 
-            data = bridge.jobs.submit(work, client=client, timeout=RENDER_TIMEOUT)
-            return 200, {"width": size, "height": size, "pixels": base64.b64encode(data).decode("ascii")}
+            data, bounds = bridge.jobs.submit(work, client=client, timeout=RENDER_TIMEOUT)
+            return 200, {"width": size, "height": size, "pixels": base64.b64encode(data).decode("ascii"),
+                         "textBounds": bounds}
 
         def export(self):
             items = read_items(self.read_json())

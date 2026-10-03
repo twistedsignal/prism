@@ -24,10 +24,12 @@ export type Props = {
 	auto3d: () -> boolean,
 	previewVersion: () -> number,
 	previewImage: () -> EditableImage?,
+	previewTextBounds: () -> Types.TextBounds?,
 	previewState: () -> string,
 	previewError: () -> string?,
 	connected: () -> boolean,
 	setCamera: ({ [string]: number }) -> (),
+	setTextOffset: ({ [string]: number }) -> (),
 	busy: () -> string?,
 }
 
@@ -206,6 +208,63 @@ const function Preview(props: Props): Frame
 		hasImage(props.previewImage() ~= nil)
 	end)
 
+	local controls: TextButton? = nil
+	controls = new("TextButton")({
+		Name = "CameraControls",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 3,
+		InputBegan = function(input: InputObject)
+			const model = props.currentModel()
+			if model == nil or input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return
+			end
+			local previous = Vector2.new(input.Position.X, input.Position.Y)
+			local textDrag = false
+			const textBounds = props.previewTextBounds()
+			const button = controls
+			if props.view() == "blender" and props.previewImage() ~= nil and textBounds and button then
+				const size = button.AbsoluteSize
+				const side = math.min(size.X, size.Y)
+				if side > 0 then
+					const topLeft = button.AbsolutePosition + (size - Vector2.new(side, side)) / 2
+					const point = (previous - topLeft) * (512 / side)
+					const padding = 6
+					textDrag = point.X >= textBounds.x - padding and point.X <= textBounds.x + textBounds.width + padding
+						and point.Y >= textBounds.y - padding and point.Y <= textBounds.y + textBounds.height + padding
+				end
+			end
+			Overlay.drag(input, function(position)
+				if props.currentModel() ~= model then
+					return
+				end
+				const delta = position - previous
+				previous = position
+				if textDrag then
+					const size = (controls :: TextButton).AbsoluteSize
+					const side = math.min(size.X, size.Y)
+					if side > 0 then
+						const settings = model.settings()
+						props.setTextOffset({
+							textOffsetX = (settings.textOffsetX or 0) + delta.X * 512 / side,
+							textOffsetY = (settings.textOffsetY or 0) + delta.Y * 512 / side,
+						})
+					end
+				else
+					props.setCamera(CameraControls.orbit(model.settings(), delta.X, delta.Y))
+				end
+			end)
+		end,
+		InputChanged = function(input: InputObject)
+			const model = props.currentModel()
+			if model and input.UserInputType == Enum.UserInputType.MouseWheel then
+				props.setCamera(CameraControls.zoom(model.settings(), input.Position.Z))
+			end
+		end,
+	}) :: TextButton
+
 	return new("Frame")({
 		Name = "Preview",
 		Size = UDim2.fromScale(1, 1),
@@ -272,35 +331,7 @@ const function Preview(props: Props): Frame
 					return if props.previewState() == "rendering" then 0.15 else 0
 				end,
 			}),
-			new("TextButton")({
-				Name = "CameraControls",
-				Size = UDim2.fromScale(1, 1),
-				BackgroundTransparency = 1,
-				Text = "",
-				AutoButtonColor = false,
-				ZIndex = 3,
-				InputBegan = function(input: InputObject)
-					const model = props.currentModel()
-					if model == nil or input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-						return
-					end
-					local previous = Vector2.new(input.Position.X, input.Position.Y)
-					Overlay.drag(input, function(position)
-						if props.currentModel() ~= model then
-							return
-						end
-						const delta = position - previous
-						previous = position
-						props.setCamera(CameraControls.orbit(model.settings(), delta.X, delta.Y))
-					end)
-				end,
-				InputChanged = function(input: InputObject)
-					const model = props.currentModel()
-					if model and input.UserInputType == Enum.UserInputType.MouseWheel then
-						props.setCamera(CameraControls.zoom(model.settings(), input.Position.Z))
-					end
-				end,
-			}),
+			controls,
 			new("Frame")({
 				Name = "Activity",
 				AnchorPoint = Vector2.new(0, 1),

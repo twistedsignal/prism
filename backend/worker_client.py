@@ -126,11 +126,13 @@ class Worker:
         finally:
             path.unlink(missing_ok=True)
 
-    def render(self, scene_id, settings, size, aa, format="rgba"):
-        self.call("render", sceneId=scene_id, settings=settings, size=size, aa=aa, format=format)
+    def render(self, scene_id, settings, size, aa, format="rgba", text_bounds=False):
+        result = self.call("render", sceneId=scene_id, settings=settings, size=size, aa=aa,
+                           format=format, textBounds=text_bounds)
         path = Path(self.directory.name) / ("render.png" if format == "png" else "render.rgba")
         try:
-            return path.read_bytes()
+            pixels = path.read_bytes()
+            return (pixels, result.get("textBounds")) if text_bounds else pixels
         finally:
             path.unlink(missing_ok=True)
 

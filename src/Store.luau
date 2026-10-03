@@ -64,6 +64,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 	local preferenceChanged = false
 	local previewRevision = 0
 	const previewVersion = source(0)
+	const previewTextBounds = source(nil :: Types.TextBounds?)
 	const previewState = source("idle" :: "idle" | "rendering" | "error")
 	const previewError = source(nil :: string?)
 	const busy = source(nil :: string?)
@@ -155,7 +156,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 	-- scenes
 	-- ---------------------------------------------------------------
 
-	local requestPreview: () -> ()
+	local requestPreview: (boolean?) -> ()
 	local queueThumbnail: (Types.Model) -> ()
 
 	const function sendScene(model: Types.Model): boolean
@@ -207,17 +208,17 @@ const function create(plugin: Plugin, bridge: Bridge)
 	-- previews
 	-- ---------------------------------------------------------------
 
-	const function invalidatePreview()
+	const function invalidatePreview(keepView: boolean?)
 		previewRevision += 1
-		if auto3d() then
+		if auto3d() and not keepView then
 			previewView("3d")
 		end
 	end
 
 	local previewBusy = false
 	local previewDirty = false
-	requestPreview = function()
-		invalidatePreview()
+	requestPreview = function(keepView: boolean?)
+		invalidatePreview(keepView)
 		previewDirty = true
 		if previewBusy then
 			return
@@ -241,6 +242,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 					previewError(model.warning())
 				elseif response.ok then
 					previewImage = writeImage(previewImage, response.body)
+					previewTextBounds(response.body.textBounds)
 					previewVersion(previewVersion() + 1)
 					previewState("idle")
 					previewError(nil)
@@ -371,6 +373,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		selected(firstSelected or 1)
 		if previous ~= currentModel() then
 			activePreset(nil)
+			previewTextBounds(nil)
 			if previewImage then
 				previewImage:Destroy()
 				previewImage = nil
@@ -432,6 +435,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 			return
 		end
 		selected(index)
+		previewTextBounds(nil)
 		requestPreview()
 	end
 
@@ -445,8 +449,8 @@ const function create(plugin: Plugin, bridge: Bridge)
 	end
 
 	local cameraToken = 0
-	const function applyToTargets(change: (Types.Settings) -> (), deferPreview: boolean?)
-		invalidatePreview()
+	const function applyToTargets(change: (Types.Settings) -> (), deferPreview: boolean?, keepView: boolean?)
+		invalidatePreview(keepView)
 		const affected = targets()
 		for _, model in affected do
 			const settings = cloneSettings(model.settings())
@@ -463,11 +467,11 @@ const function create(plugin: Plugin, bridge: Bridge)
 			const token = cameraToken
 			task.delay(0.12, function()
 				if not destroyed and cameraToken == token then
-					requestPreview()
+					requestPreview(keepView)
 				end
 			end)
 		else
-			requestPreview()
+			requestPreview(keepView)
 		end
 	end
 
@@ -480,6 +484,17 @@ const function create(plugin: Plugin, bridge: Bridge)
 				end
 			end
 		end, true)
+	end
+
+	const function setTextOffset(values: { [string]: number })
+		activePreset(nil)
+		applyToTargets(function(settings)
+			for _, key in { "textOffsetX", "textOffsetY" } do
+				if values[key] ~= nil then
+					settings[key] = math.clamp(math.round(values[key]), -512, 512)
+				end
+			end
+		end, false, true)
 	end
 
 	const function setValue(key: string, value: any)
@@ -825,6 +840,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 			end)
 		end,
 		previewVersion = previewVersion,
+		previewTextBounds = previewTextBounds,
 		previewState = previewState,
 		previewError = previewError,
 		previewImage = function(): EditableImage?
@@ -835,6 +851,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		select = select,
 		setValue = setValue,
 		setCamera = setCamera,
+		setTextOffset = setTextOffset,
 		resetToDefaults = resetToDefaults,
 		copyToAll = copyToAll,
 		applyPreset = applyPreset,

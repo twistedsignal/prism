@@ -414,7 +414,7 @@ SECTIONS = [
         "collapsed": True,
         "settings": [
             {"key": "text", "label": "Text", "type": "text", "default": "", "maxLength": 120,
-             "description": "Text drawn over the center of the render, above every other effect. Leave empty for none. Type \\\\n for a new line."},
+             "description": "Text drawn over the render, above every other effect. Leave empty for none. Type \\\\n for a new line."},
             {
                 "type": "group",
                 "id": "textFont",
@@ -439,6 +439,10 @@ SECTIONS = [
                 "label": "Layout",
                 "requires": "text",
                 "settings": [
+                    {"key": "textOffsetX", "label": "Text X offset", "type": "number", "min": -512, "max": 512, "step": 1, "default": 0,
+                     "description": "Move text right in pixels at 512px. Drag the text in the Blender preview to set this."},
+                    {"key": "textOffsetY", "label": "Text Y offset", "type": "number", "min": -512, "max": 512, "step": 1, "default": 0,
+                     "description": "Move text down in pixels at 512px. Drag the text in the Blender preview to set this."},
                     {"key": "textRotation", "label": "Text rotation", "type": "number", "min": -180, "max": 180, "step": 1, "default": 0,
                      "description": "Clockwise rotation in degrees."},
                     {"key": "textLetterSpacing", "label": "Letter spacing", "type": "number", "min": 0.5, "max": 3, "step": 0.05, "default": 1,

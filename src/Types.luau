@@ -52,6 +52,7 @@ export type Schema = {
 }
 
 export type Settings = { [string]: any }
+export type TextBounds = { x: number, y: number, width: number, height: number }
 
 export type Config = {
 	outputFolder: string,

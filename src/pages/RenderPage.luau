@@ -511,10 +511,12 @@ const function RenderPage(props: Props): Frame
 					return view()
 				end,
 				previewVersion = store.previewVersion,
+				previewTextBounds = store.previewTextBounds,
 				previewImage = store.previewImage,
 				previewState = store.previewState,
 				previewError = store.previewError,
 				setCamera = store.setCamera,
+				setTextOffset = store.setTextOffset,
 				busy = store.busy,
 				connected = props.connected,
 			}),

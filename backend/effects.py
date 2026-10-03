@@ -605,6 +605,8 @@ def post_process_pixels(pixels, settings, size, cache=None, key=None, passes=Non
         image = crt(image, settings["crtScanlines"], settings["crtCurvature"], scale)
     text = passes.get("text")
     if text is not None and text_visible(settings):
+        text = shift_mask(text, int(round(settings["textOffsetX"] * scale)),
+                          -int(round(settings["textOffsetY"] * scale)))
         for color, amount in text_layers(np.clip(text, 0.0, 1.0), settings, scale, cached):
             image = over(image, color, amount)
 

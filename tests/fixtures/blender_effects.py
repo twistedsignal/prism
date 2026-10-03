@@ -81,6 +81,16 @@ with tempfile.TemporaryDirectory() as directory:
         engine.render(key, {**settings, "text": "Changed"}, 128, "8")
         assert read.call_count == 1, f"Changing the text rerendered {read.call_count} passes"
 
+    text_settings = {"text": "Move", "textColor": "#FF00FFFF", "outlineSize": 0, "dropShadow": False}
+    centered = engine.render(key, text_settings, 128, "8")
+    bounds = engine.text_bounds(text_settings, 128, "8")
+    assert bounds is not None and bounds["width"] > 0 and bounds["height"] > 0
+    with patch.object(renderer, "load_png_pixels", side_effect=AssertionError("Offset edit invoked Blender")):
+        moved = engine.render(key, {**text_settings, "textOffsetX": 64, "textOffsetY": 32}, 128, "8")
+        moved_bounds = engine.text_bounds({**text_settings, "textOffsetX": 64, "textOffsetY": 32}, 128, "8")
+    assert not np.array_equal(centered, moved), "Text offset changed nothing"
+    assert moved_bounds["x"] == bounds["x"] + 64 and moved_bounds["y"] == bounds["y"] + 32
+
     # Settings the plugin hides must not change a Blender render either.
     hidden = [
         ({"orthographic": True}, {"fov": 90, "fovAuto": False}),

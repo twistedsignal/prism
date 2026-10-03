@@ -60,8 +60,8 @@ def main():
                             (directory / "render.rgba").write_bytes(renderer.to_rgba8_top_down(pixels))
                         # Exports are large one-offs; return temporary buffers afterwards.
                         del pixels
+                        result = {"textBounds": engine.text_bounds(settings, size, aa)} if request.get("textBounds") else {}
                         memory.release()
-                        result = {}
                     else:
                         raise ValueError("Unknown worker operation")
                     response = {"ok": True, "result": result}

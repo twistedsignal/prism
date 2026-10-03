@@ -323,6 +323,10 @@ class BlenderWorkerTests(unittest.TestCase):
                 self.assertTrue(any(pixels[3::4]))
                 png = worker.render(scene["sceneId"], {}, 128, "8", "png")
                 self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+                _, bounds = worker.render(scene["sceneId"], {"text": "Drag me"}, 128, "8", text_bounds=True)
+                self.assertIsNotNone(bounds)
+                self.assertGreater(bounds["width"], 0)
+                self.assertGreater(bounds["height"], 0)
                 worker.last_used -= 61
                 worker.stop_if_idle()
                 self.assertIsNone(worker.process)
