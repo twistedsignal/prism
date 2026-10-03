@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - wally.toml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rokit tools
+        uses: CompeyDev/setup-rokit@v0.1.2
+
+      - name: Read package version
+        id: package
+        run: |
+          version="$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' wally.toml | head -n 1)"
+          if [[ -z "$version" ]]; then
+            echo 'wally.toml must contain a semver package version like version = "1.0.0".' >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag and release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.package.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists." >&2
+            exit 1
+          fi
+          # A manually pushed tag is fine as long as it points at this commit.
+          remote="$(git ls-remote --tags origin "refs/tags/$tag^{}" "refs/tags/$tag" | awk '{print $1}' | head -n 1)"
+          if [[ -n "$remote" ]]; then
+            peeled="$(git ls-remote --tags origin "refs/tags/$tag^{}" | awk '{print $1}')"
+            if [[ "${peeled:-$remote}" != "$GITHUB_SHA" ]]; then
+              echo "Tag $tag already exists on a different commit." >&2
+              exit 1
+            fi
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Wally packages
+        run: wally install
+
+      - name: Build plugin
+        run: ./scripts/build.bash
+
+      - name: Package backend
+        run: |
+          find backend -name __pycache__ -prune -exec rm -rf {} +
+          echo "${{ steps.package.outputs.version }}" > backend/VERSION
+          tar -czf build/prism-backend.tar.gz backend
+          zip -qr build/prism-backend.zip backend
+
+      - name: Create version tag
+        if: steps.existing.outputs.tagged != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.package.outputs.tag }}" "$GITHUB_SHA"
+          git push origin "${{ steps.package.outputs.tag }}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.package.outputs.tag }}" \
+            build/Prism.rbxm \
+            build/prism-backend.tar.gz \
+            build/prism-backend.zip \
+            --title "${{ steps.package.outputs.tag }}" \
+            --notes "Prism ${{ steps.package.outputs.tag }}"

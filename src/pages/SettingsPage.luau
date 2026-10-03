@@ -1,0 +1,264 @@
+-- selene: allow(mixed_table)
+-- backend settings: output folder, render sizes, tool paths and the bridge port.
+const vide = require("../vide")
+const Theme = require("../components/Theme")
+const Button = require("../components/Button")
+const TextBoxSetting = require("../components/TextBoxSetting")
+const ToggleSetting = require("../components/ToggleSetting")
+const DropdownSetting = require("../components/DropdownSetting")
+const Store = require("../Store")
+
+const new = vide.create
+
+const SIZES = { 128, 256, 384, 512, 768, 1024 }
+const AA = { "OFF", "FXAA", "5", "8", "11", "16", "32" }
+
+export type Props = {
+	store: Store.Store,
+	bridge: {
+		port: () -> number,
+		setPort: (number) -> (),
+		connected: () -> boolean,
+		blender: () -> string?,
+		version: () -> string?,
+		refresh: () -> (),
+	},
+	pluginVersion: string,
+}
+
+const function heading(text: string, order: number): TextLabel
+	return new("TextLabel")({
+		Name = text,
+		Size = UDim2.new(1, 0, 0, 30),
+		LayoutOrder = order,
+		BackgroundTransparency = 1,
+		Text = `  {string.upper(text)}`,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Bottom,
+		TextColor3 = Theme.SUBTLE,
+		Font = Enum.Font.SourceSansBold,
+		TextSize = 13,
+
+		new("UIPadding")({ PaddingBottom = UDim.new(0, 4) }),
+	}) :: TextLabel
+end
+
+const function options(values: { any }, suffix: string): () -> { { label: string, value: any } }
+	return function()
+		const list = {}
+		for _, value in values do
+			table.insert(list, { label = `{value}{suffix}`, value = value })
+		end
+		return list
+	end
+end
+
+const function SettingsPage(props: Props): ScrollingFrame
+	const store = props.store
+	const config = function(key: string): any
+		const current = store.config()
+		return if current then (current :: any)[key] else nil
+	end
+	const text = function(key: string): () -> string
+		return function()
+			const value = config(key)
+			return if value == nil then "" else tostring(value)
+		end
+	end
+	const commit = function(key: string): (string) -> ()
+		return function(value: string)
+			store.updateConfig({ [key] = value })
+		end
+	end
+
+	local order = 0
+	const function nextOrder(): number
+		order += 1
+		return order
+	end
+
+	const function row<T>(instance: T & GuiObject): T
+		instance.LayoutOrder = nextOrder()
+		return instance
+	end
+
+	return new("ScrollingFrame")({
+		Name = "SettingsPage",
+		Position = UDim2.fromOffset(10, 0),
+		Size = UDim2.new(1, -20, 1, 0),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 6,
+		ScrollBarImageColor3 = Theme.BORDER,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+
+		new("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
+
+		heading("Output", nextOrder()),
+		row(TextBoxSetting({
+			name = "Output folder",
+			index = 1,
+			description = "Rendered icons are saved here. Browse opens your system's folder picker.",
+			value = text("outputFolder"),
+			onCommit = commit("outputFolder"),
+			button = { text = "Browse", activated = store.pickFolder },
+		})),
+		row(TextBoxSetting({
+			name = "File name",
+			index = 2,
+			description = "Pattern for saved files. {name} is the model name, {index} its position in the list.",
+			value = text("filenamePattern"),
+			onCommit = commit("filenamePattern"),
+		})),
+		row(ToggleSetting({
+			name = "Overwrite files",
+			index = 3,
+			labelWidth = 0.35,
+			description = "Replace files with the same name instead of adding a number.",
+			value = function()
+				return config("overwrite") == true
+			end,
+			onChange = function(value)
+				store.updateConfig({ overwrite = value })
+			end,
+		})),
+
+		heading("Quality", nextOrder()),
+		row(DropdownSetting({
+			name = "Render size",
+			index = 1,
+			description = "Pixel size of saved and uploaded icons.",
+			text = function()
+				return `{config("renderSize") or "-"} px`
+			end,
+			options = options(SIZES, " px"),
+			onSelect = function(value)
+				store.updateConfig({ renderSize = value })
+			end,
+		})),
+		row(DropdownSetting({
+			name = "Render anti-aliasing",
+			index = 2,
+			description = "Samples for saved icons. More samples are smoother and slower.",
+			text = function()
+				return tostring(config("renderAA") or "-")
+			end,
+			options = options(AA, ""),
+			onSelect = function(value)
+				store.updateConfig({ renderAA = value })
+			end,
+		})),
+		row(DropdownSetting({
+			name = "Preview size",
+			index = 3,
+			description = "Pixel size of the live preview. Smaller is faster.",
+			text = function()
+				return `{config("previewSize") or "-"} px`
+			end,
+			options = options(SIZES, " px"),
+			onSelect = function(value)
+				store.updateConfig({ previewSize = value })
+				task.defer(store.requestPreview)
+			end,
+		})),
+		row(DropdownSetting({
+			name = "Preview anti-aliasing",
+			index = 4,
+			description = "Samples for the live preview.",
+			text = function()
+				return tostring(config("previewAA") or "-")
+			end,
+			options = options(AA, ""),
+			onSelect = function(value)
+				store.updateConfig({ previewAA = value })
+				task.defer(store.requestPreview)
+			end,
+		})),
+
+		heading("Uploading", nextOrder()),
+		row(TextBoxSetting({
+			name = "Default creator",
+			index = 1,
+			description = "Who uploads go to when the place has no owner yet: user:<id> or group:<id>.",
+			placeholderText = "user:123456",
+			value = text("defaultCreator"),
+			onCommit = commit("defaultCreator"),
+		})),
+		row(TextBoxSetting({
+			name = "Raven path",
+			index = 2,
+			description = "Full path to the raven executable. Leave empty to search PATH.",
+			value = text("ravenPath"),
+			onCommit = commit("ravenPath"),
+		})),
+
+		heading("Backend", nextOrder()),
+		row(TextBoxSetting({
+			name = "Blender",
+			index = 1,
+			description = "Blender command the startup entry runs. Re-run the installer to change it.",
+			value = text("blenderPath"),
+			onCommit = commit("blenderPath"),
+		})),
+		row(TextBoxSetting({
+			name = "Port",
+			index = 2,
+			description = "Port the backend listens on. Restart the backend after changing it.",
+			value = function()
+				return tostring(props.bridge.port())
+			end,
+			onCommit = function(value)
+				const port = tonumber(value)
+				if port and port >= 1024 and port <= 65535 then
+					store.updateConfig({ port = math.floor(port) })
+					props.bridge.setPort(math.floor(port))
+				end
+			end,
+		})),
+
+		new("Frame")({
+			Name = "About",
+			Size = UDim2.new(1, 0, 0, 70),
+			LayoutOrder = nextOrder(),
+			BackgroundTransparency = 1,
+
+			new("TextLabel")({
+				Position = UDim2.fromOffset(4, 10),
+				Size = UDim2.new(1, -140, 0, 50),
+				BackgroundTransparency = 1,
+				Text = function()
+					const backend = if props.bridge.connected()
+						then `Backend {props.bridge.version() or "?"} · Blender {props.bridge.blender() or "?"}`
+						else "Backend offline"
+					return `Prism v{props.pluginVersion}\n{backend}`
+				end,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				TextColor3 = Theme.SUBTLE,
+				Font = Enum.Font.SourceSans,
+				TextSize = 14,
+			}),
+			Button({
+				text = "Test connection",
+				size = UDim2.fromOffset(124, 28),
+				position = UDim2.new(1, -4, 0, 10),
+				anchorPoint = Vector2.new(1, 0),
+				activated = function()
+					task.spawn(function()
+						props.bridge.refresh()
+						if props.bridge.connected() then
+							store.reload()
+							store.setNotice("Connected to the Prism backend.", "success")
+						else
+							store.setNotice(`No backend on port {props.bridge.port()}.`, "error")
+						end
+					end)
+				end,
+			}),
+		}),
+	}) :: ScrollingFrame
+end
+
+return SettingsPage

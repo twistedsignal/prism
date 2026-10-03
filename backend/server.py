@@ -1,0 +1,311 @@
+"""Local HTTP API used by the Studio plugin. Binds to 127.0.0.1 only."""
+
+import base64
+import json
+import re
+import sys
+import threading
+import traceback
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import unquote
+
+import bpy
+
+import config
+import platform_open
+import renderer
+import schema
+import uploader
+from jobs import JobQueue, Superseded
+from scene import SceneCache, SceneError
+
+MAX_BODY = 512 * 1024 * 1024
+RENDER_TIMEOUT = 600
+UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
+
+
+class HttpError(Exception):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def safe_filename(name):
+    name = UNSAFE_FILENAME.sub("_", str(name)).strip(" .")
+    return name[:100] or "icon"
+
+
+class Bridge:
+    """Shared state for request handlers. Everything touching bpy goes through jobs."""
+
+    def __init__(self, store):
+        self.store = store
+        self.jobs = JobQueue()
+        self.scenes = SceneCache(config.cache_dir())
+        self.renderer = None
+
+    # ---- main-thread work ------------------------------------------------
+
+    def render(self, scene_id, settings, size, aa):
+        if self.renderer is None:
+            self.renderer = renderer.Renderer()
+        if not self.scenes.exists(scene_id):
+            raise HttpError(404, "Unknown scene; send it again")
+        key = self.renderer.load(self.scenes.path(scene_id))
+        return self.renderer.render(key, settings, size, aa)
+
+    def output_path(self, folder, name, index, overwrite, pattern):
+        stem = safe_filename(pattern.replace("{name}", safe_filename(name)).replace("{index}", str(index)))
+        path = folder / f"{stem}.png"
+        counter = 2
+        while not overwrite and path.exists():
+            path = folder / f"{stem} ({counter}).png"
+            counter += 1
+        return path
+
+    def export(self, items):
+        settings_config = self.store.get_config()
+        folder = Path(settings_config["outputFolder"]).expanduser()
+        folder.mkdir(parents=True, exist_ok=True)
+        results = []
+        for index, item in enumerate(items, start=1):
+            name = item.get("name") or f"Icon {index}"
+            try:
+                pixels = self.render(
+                    item.get("sceneId"), item.get("settings"),
+                    settings_config["renderSize"], settings_config["renderAA"],
+                )
+                path = self.output_path(
+                    folder, name, index, settings_config["overwrite"], settings_config["filenamePattern"],
+                )
+                renderer.save_png_pixels(pixels, path)
+                results.append({"name": name, "path": str(path)})
+            except Exception as error:  # noqa: BLE001 - reported per item
+                results.append({"name": name, "error": error_message(error)})
+        return results
+
+
+def error_message(error):
+    if isinstance(error, HttpError):
+        return error.message
+    return str(error) or error.__class__.__name__
+
+
+def read_items(body):
+    items = body.get("items")
+    if not isinstance(items, list) or not items:
+        raise HttpError(400, "items must be a non-empty list")
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("sceneId"), str):
+            raise HttpError(400, "each item needs a sceneId")
+    return items
+
+
+def make_handler(bridge):
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "Prism"
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, format, *args):  # noqa: A002 - signature from the base class
+            sys.stdout.write(f"[prism] {self.address_string()} {format % args}\n")
+
+        # ---- plumbing ----------------------------------------------------
+
+        def send_json(self, status, value):
+            data = json.dumps(value).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def read_body(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_BODY:
+                raise HttpError(413, "Request is too large")
+            return self.rfile.read(length) if length else b""
+
+        def read_json(self, raw=None):
+            raw = self.read_body() if raw is None else raw
+            if not raw:
+                return {}
+            try:
+                value = json.loads(raw)
+            except ValueError as error:
+                raise HttpError(400, "Body is not valid JSON") from error
+            if not isinstance(value, dict):
+                raise HttpError(400, "Body must be a JSON object")
+            return value
+
+        def dispatch(self, method):
+            try:
+                # Browsers always send Origin on cross-site requests and can't add
+                # custom headers without a CORS preflight we never answer.
+                if self.headers.get("Origin") is not None:
+                    raise HttpError(403, "Browser requests are not allowed")
+                if self.headers.get("X-Prism") != "1":
+                    raise HttpError(403, "Missing X-Prism header")
+                path = self.path.split("?", 1)[0].rstrip("/") or "/"
+                handler = ROUTES.get((method, path))
+                argument = None
+                if handler is None and path.startswith("/presets/"):
+                    handler = ROUTES.get((method, "/presets/<name>"))
+                    argument = unquote(path[len("/presets/"):])
+                if handler is None:
+                    raise HttpError(404, "Not found")
+                status, value = handler(self, argument) if argument is not None else handler(self)
+                self.send_json(status, value)
+            except HttpError as error:
+                self.send_json(error.status, {"error": error.message})
+            except Superseded:
+                self.send_json(409, {"error": "superseded"})
+            except SceneError as error:
+                self.send_json(400, {"error": str(error)})
+            except Exception as error:  # noqa: BLE001 - never kill the server thread
+                traceback.print_exc()
+                self.send_json(500, {"error": error_message(error)})
+
+        def do_GET(self):  # noqa: N802 - http.server naming
+            self.dispatch("GET")
+
+        def do_POST(self):  # noqa: N802
+            self.dispatch("POST")
+
+        def do_PUT(self):  # noqa: N802
+            self.dispatch("PUT")
+
+        def do_DELETE(self):  # noqa: N802
+            self.dispatch("DELETE")
+
+        # ---- routes ------------------------------------------------------
+
+        def status(self):
+            return 200, {
+                "version": config.version(),
+                "blender": bpy.app.version_string,
+                "busy": bridge.jobs.busy,
+                "platform": sys.platform,
+            }
+
+        def get_schema(self):
+            return 200, schema.schema()
+
+        def get_config(self):
+            return 200, bridge.store.get_config()
+
+        def put_config(self):
+            return 200, bridge.store.update_config(self.read_json())
+
+        def get_presets(self):
+            return 200, bridge.store.get_presets()
+
+        def put_preset(self, name):
+            body = self.read_json()
+            try:
+                saved = bridge.store.save_preset(name, body.get("settings"))
+            except ValueError as error:
+                raise HttpError(400, str(error)) from error
+            return 200, {"name": saved, "presets": bridge.store.get_presets()}
+
+        def delete_preset(self, name):
+            if not bridge.store.delete_preset(name):
+                raise HttpError(404, "No preset with that name")
+            return 200, {"presets": bridge.store.get_presets()}
+
+        def post_scene(self):
+            raw = self.read_body()
+            payload = self.read_json(raw)
+            identifier, warnings = bridge.scenes.add(raw, payload)
+            return 200, {"sceneId": identifier, "warnings": warnings}
+
+        def preview(self):
+            body = self.read_json()
+            settings_config = bridge.store.get_config()
+            size = body.get("size", settings_config["previewSize"])
+            if size not in config.SIZE_OPTIONS:
+                size = settings_config["previewSize"]
+            client = body.get("client") if isinstance(body.get("client"), str) else None
+            scene_id = body.get("sceneId")
+            if not isinstance(scene_id, str):
+                raise HttpError(400, "sceneId is required")
+
+            def work():
+                pixels = bridge.render(scene_id, body.get("settings"), size, settings_config["previewAA"])
+                return renderer.to_rgba8_top_down(pixels)
+
+            data = bridge.jobs.submit(work, client=client, timeout=RENDER_TIMEOUT)
+            return 200, {"width": size, "height": size, "pixels": base64.b64encode(data).decode("ascii")}
+
+        def export(self):
+            items = read_items(self.read_json())
+            results = bridge.jobs.submit(lambda: bridge.export(items), timeout=RENDER_TIMEOUT * len(items))
+            return 200, {"results": results, "folder": bridge.store.get_config()["outputFolder"]}
+
+        def upload(self):
+            body = self.read_json()
+            items = read_items(body)
+            settings_config = bridge.store.get_config()
+            creator = body.get("creator") or settings_config["defaultCreator"]
+            if not isinstance(creator, str) or not config.CREATOR_PATTERN.match(creator):
+                raise HttpError(400, "Choose who to upload to (user:<id> or group:<id>)")
+            results = bridge.jobs.submit(lambda: bridge.export(items), timeout=RENDER_TIMEOUT * len(items))
+            # Uploads wait on Roblox, so they run here rather than blocking renders.
+            for result in results:
+                if "error" in result:
+                    continue
+                try:
+                    result.update(uploader.upload(
+                        result["path"], result["name"], creator, settings_config["ravenPath"],
+                    ))
+                except uploader.UploadError as error:
+                    result["error"] = str(error)
+            return 200, {"results": results, "creator": creator}
+
+        def open_folder(self):
+            folder = bridge.store.get_config()["outputFolder"]
+            platform_open.open_folder(folder)
+            return 200, {"folder": folder}
+
+        def pick_folder(self):
+            current = bridge.store.get_config()["outputFolder"]
+            chosen = platform_open.pick_folder(current)
+            if chosen is None:
+                return 200, {"folder": None, "config": bridge.store.get_config()}
+            return 200, {"folder": chosen, "config": bridge.store.update_config({"outputFolder": chosen})}
+
+    ROUTES = {
+        ("GET", "/status"): Handler.status,
+        ("GET", "/schema"): Handler.get_schema,
+        ("GET", "/config"): Handler.get_config,
+        ("PUT", "/config"): Handler.put_config,
+        ("GET", "/presets"): Handler.get_presets,
+        ("PUT", "/presets/<name>"): Handler.put_preset,
+        ("DELETE", "/presets/<name>"): Handler.delete_preset,
+        ("POST", "/scenes"): Handler.post_scene,
+        ("POST", "/preview"): Handler.preview,
+        ("POST", "/export"): Handler.export,
+        ("POST", "/upload"): Handler.upload,
+        ("POST", "/open-folder"): Handler.open_folder,
+        ("POST", "/pick-folder"): Handler.pick_folder,
+    }
+    return Handler
+
+
+def serve(store, port):
+    bridge = Bridge(store)
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(bridge))
+    httpd.daemon_threads = True
+    thread = threading.Thread(target=httpd.serve_forever, name="prism-http", daemon=True)
+    thread.start()
+    print(f"[prism] Prism {config.version()} listening on http://127.0.0.1:{port} (Blender {bpy.app.version_string})")
+    sys.stdout.flush()
+    try:
+        while True:
+            bridge.jobs.run_pending()
+    except KeyboardInterrupt:
+        print("[prism] Shutting down")
+    finally:
+        httpd.shutdown()

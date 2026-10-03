@@ -1,0 +1,10 @@
+[package]
+name = "ivadsiuls/prism"
+description = "a roblox studio to blender icon renderer"
+version = "0.1.0"
+license = "MIT"
+realm = "shared"
+registry = "https://github.com/upliftgames/wally-index"
+
+[dependencies]
+vide = "centau/vide@0.4.0"

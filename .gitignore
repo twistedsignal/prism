@@ -1,0 +1,16 @@
+test
+test/**
+
+/*.rbxl
+/*.rbxl.lock
+/*.rbxm
+/sourcemap.json
+/src/Version.luau
+
+__pycache__/
+*.pyc
+
+Packages
+build
+vendor
+backend/VERSION

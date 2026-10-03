@@ -1,0 +1,14 @@
+{
+  "name": "dev_plugin",
+  "globIgnorePaths": ["**/*.spec.lua"],
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Plugin": {
+        "$path": "src"
+      }
+    }
+  }
+}
