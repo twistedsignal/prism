@@ -86,6 +86,11 @@ Image effects reuse the rendered image, so every effect edit skips Blender entir
 
 R15 classic clothing uses Roblox's compositing UV maps and preserves the body meshes' original UV islands, including wrists, knees and ankles. Primitive fallback parts sample the sleeve or pant seam at internal joints instead of repeating the shoulder or hip cap.
 
+Unions render from their serialized geometry, including stored colors when `UsePartColor` is off.
+Prism regenerates a temporary unparented Union to recover cloud-backed geometry, then destroys it.
+The CSG decoder supports legacy CSGMDLV5 and SolidMesh. Unsupported geometry falls back to a box
+with a warning. Roblox can change these undocumented formats between Studio releases.
+
 The backend supports FileMesh v1, v2, v3, v4, and v7. Compressed v7 meshes use Blender's bundled Draco decoder; official Blender builds include it. No extra Python package or export dialog is required. Downloads respect the key's access to each asset.
 
 ## Development

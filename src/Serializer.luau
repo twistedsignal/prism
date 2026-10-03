@@ -2,6 +2,7 @@
 -- prefer editable content, then send asset references for backend recovery.
 const AssetService = game:GetService("AssetService")
 const Base64 = require("./Base64")
+const UnionMesh = require("./UnionMesh")
 const MarketplaceService = game:GetService("MarketplaceService")
 const MaterialService = game:GetService("MaterialService")
 const StudioService = game:GetService("StudioService")
@@ -566,8 +567,15 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 			end
 		end
 	elseif part:IsA("PartOperation") then
-		entry.kind = "block"
-		entry.warning = "Unions are drawn as boxes: plugins can't read union geometry."
+		const data, cframe, problem = UnionMesh.read(part :: PartOperation)
+		if data and cframe then
+			entry.kind = "mesh"
+			entry.mesh = data
+			entry.cframe = { (relative * part.CFrame:ToObjectSpace(cframe)):GetComponents() }
+		else
+			entry.kind = "block"
+			entry.warning = `Could not read union geometry ({problem}); using a box`
+		end
 	elseif part:IsA("WedgePart") then
 		entry.kind = "wedge"
 	elseif part:IsA("CornerWedgePart") then

@@ -217,7 +217,9 @@ def decode(data):
                     tuple(v * (0.5 if version == "1.00" else 1) for v in attributes[0])
                 )
                 normals.append(attributes[1])
-                uvs.append(attributes[2][:2])
+                # ASCII FileMesh v1 uses bottom-left UVs. Normalize to the
+                # top-left convention used by EditableMesh and binary FileMesh.
+                uvs.append((attributes[2][0], 1.0 - attributes[2][1]))
             return expand(vertices, normals, uvs, list(range(face_count * 3)))
         except ValueError as error:
             raise MeshError("Invalid v1 mesh data") from error

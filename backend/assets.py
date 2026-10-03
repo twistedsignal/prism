@@ -2,7 +2,9 @@
 
 import base64
 import copy
+import gzip
 import hashlib
+import io
 import json
 import os
 import re
@@ -22,6 +24,7 @@ import uploader
 MAX_BYTES = 128 * 1024 * 1024
 # Decoded meshes and textures also live on disk; memory only speeds up re-selection.
 DECODED_CACHE_BYTES = 16 * 1024 * 1024
+MESH_DECODER_VERSION = 2
 # Keep in sync with install.sh and install.ps1 (tests/test_installers.py checks this).
 RAVEN_VERSION = "0.3.0"
 RAVEN_ARCHIVE = f"https://github.com/twistedsignal/raven/archive/refs/tags/v{RAVEN_VERSION}.tar.gz"
@@ -150,6 +153,9 @@ def read_public(identifier):
     request = urllib.request.Request(url, headers={"User-Agent": f"Prism/{config.version()}"})
     with urllib.request.urlopen(request, timeout=20) as response:
         data = response.read(MAX_BYTES + 1)
+        if len(data) <= MAX_BYTES and response.headers.get("Content-Encoding", "").lower() == "gzip":
+            with gzip.GzipFile(fileobj=io.BytesIO(data)) as compressed:
+                data = compressed.read(MAX_BYTES + 1)
     if not data or len(data) > MAX_BYTES:
         raise AssetError("Empty asset or asset exceeds 128 MB")
     return data
@@ -212,7 +218,8 @@ class Resolver:
     def decode_cached(self, identifier, kind, loader):
         data = self.download(identifier)
         digest = hashlib.sha256(data).hexdigest()
-        key = (identifier, kind, digest)
+        revision = MESH_DECODER_VERSION if kind == "mesh" else 1
+        key = (identifier, kind, digest, revision)
         if key in self.decoded:
             return self.decoded[key]
         path = self.root / f"{identifier}.{kind}.json"
@@ -224,11 +231,11 @@ class Resolver:
             )
         except (OSError, ValueError):
             cached = {}
-        if cached.get("digest") == digest and "data" in cached:
+        if cached.get("digest") == digest and cached.get("revision") == revision and "data" in cached:
             result = cached["data"]
         else:
             result = loader(data)
-        serialized = json.dumps({"digest": digest, "data": result})
+        serialized = json.dumps({"digest": digest, "revision": revision, "data": result})
         weight = len(serialized)
         if weight <= 128 * 1024 * 1024:
             temporary = path.with_suffix(".tmp")

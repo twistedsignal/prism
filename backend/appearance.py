@@ -195,6 +195,41 @@ def bake_r15(corners, size, rgb, base, layers, textures, region):
     return corners, {"width": width, "height": height, "pixels": base64.b64encode(pixels).decode("ascii")}
 
 
+def bake_colors(corners, colors):
+    """Give each distinct triangle color triplet a padded tile, including gradients."""
+    palette, triangle_tiles = {}, []
+    for start in range(0, len(corners), 3):
+        key = tuple(colors[start * 3 : (start + 3) * 3])
+        if key not in palette:
+            palette[key] = len(palette)
+        triangle_tiles.append(palette[key])
+    tile = 8
+    columns = min(512, max(1, int(np.ceil(np.sqrt(len(palette))))))
+    rows = int(np.ceil(len(palette) / columns))
+    if rows > 512:
+        raise ValueError("Union color atlas exceeds 4096 pixels")
+    atlas = np.ones((rows * tile, columns * tile, 4), dtype=np.float32)
+    yy, xx = np.mgrid[0:tile, 0:tile]
+    weights = np.stack((1 - (xx - 1) / 5 - (yy - 1) / 5,
+                        (xx - 1) / 5, (yy - 1) / 5), axis=-1)
+    weights = np.maximum(weights, 0)
+    weights /= weights.sum(axis=-1, keepdims=True)
+    for key, index in palette.items():
+        x, y = index % columns * tile, index // columns * tile
+        atlas[y:y + tile, x:x + tile, :3] = weights @ np.asarray(key).reshape(3, 3)
+    result = []
+    triangle_uvs = ((1.5, 1.5), (6.5, 1.5), (1.5, 6.5))
+    for i, (point, _, normal) in enumerate(corners):
+        index = triangle_tiles[i // 3]
+        x, y = triangle_uvs[i % 3]
+        u = (index % columns * tile + x) / (columns * tile)
+        v = (index // columns * tile + y) / (rows * tile)
+        result.append((point, (u, 1 - v), normal))
+    pixels = (np.clip(atlas, 0, 1) * 255 + 0.5).astype(np.uint8).tobytes()
+    return result, {"width": columns * tile, "height": rows * tile,
+                    "pixels": base64.b64encode(pixels).decode("ascii")}
+
+
 def bake(corners, size, rgb, base, layers, textures, native_uv=False):
     """Preserve geometry and normals; replace UVs with baked part-local projections."""
     from scene import face_normal
@@ -294,7 +329,11 @@ def bake(corners, size, rgb, base, layers, textures, native_uv=False):
             foreground = sample(image, uv, repeat=bool(layer.get("repeat"))).copy()
             foreground[..., :3] *= layer.get("tint", [1, 1, 1])
             foreground[..., 3] *= 1 - layer.get("transparency", 0)
-            tiles[index] = over(tiles[index], foreground)
+            if layer.get("multiply"):
+                # Built-in material detail modulates stored Union colors.
+                tiles[index][..., :3] *= foreground[..., :3] * foreground[..., 3:4] + 1 - foreground[..., 3:4]
+            else:
+                tiles[index] = over(tiles[index], foreground)
     stride = TILE + 2 * PAD
     atlas = np.zeros((2 * stride, 3 * stride, 4), dtype=np.float32)
     for index, tile in enumerate(tiles):

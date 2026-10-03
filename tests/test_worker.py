@@ -282,6 +282,14 @@ class RuntimeTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("PRISM_TEST_BLENDER"), "Set PRISM_TEST_BLENDER to run Blender integration")
 class BlenderWorkerTests(unittest.TestCase):
+    def test_real_blender_mesh_textures_and_union_colors(self):
+        result = subprocess.run([
+            os.environ["PRISM_TEST_BLENDER"], "--background", "--factory-startup",
+            "--python-exit-code", "1", "--python", str(ROOT / "tests" / "fixtures" / "blender_meshes.py"),
+        ], capture_output=True, text=True, timeout=180)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Blender mesh texture and Union color checks passed", result.stdout)
+
     def test_real_blender_memory(self):
         result = subprocess.run([
             os.environ["PRISM_TEST_BLENDER"], "--background", "--factory-startup",

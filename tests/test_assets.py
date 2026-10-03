@@ -1,4 +1,6 @@
 import base64
+import gzip
+import io
 import json
 import struct
 import sys
@@ -64,6 +66,38 @@ class MeshTests(unittest.TestCase):
             mesh_asset.decode(binary)["positions"], mesh_asset.decode(data)["positions"]
         )
 
+    def test_ascii_uvs_normalized_without_changing_binary_uvs(self):
+        vectors = b"[0,0,0][0,0,1][0.2,0.3,0]" * 3
+        for version in (b"1.00", b"1.01"):
+            mesh = mesh_asset.decode(b"version " + version + b"\n1\n" + vectors)
+            uv = struct.unpack("<6f", base64.b64decode(mesh["uvs"]))
+            self.assertAlmostEqual(uv[0], 0.2)
+            self.assertAlmostEqual(uv[1], 0.7)
+            self.assertAlmostEqual(scene.mesh_corners(mesh)[0][1][1], 0.3)
+        self.assertEqual(base64.b64decode(mesh_asset.decode(mesh_v2())["uvs"]), bytes(24))
+
+    def test_classic_soccer_ball_uvs_and_winding(self):
+        fixture = Path(__file__).parent / "fixtures" / "soccer" / "ball.mesh"
+        corners = scene.mesh_corners({**mesh_asset.decode(fixture.read_bytes()), "center": False})
+        groups = {}
+        for start in range(0, len(corners), 3):
+            triangle = corners[start:start + 3]
+            normal = scene.face_normal(*(corner[0] for corner in triangle))
+            self.assertGreater(sum(normal[a] * triangle[0][2][a] for a in range(3)), 0)
+            key = tuple(round(n, 3) for n in normal)
+            groups.setdefault(key, []).extend(triangle)
+        polygon_counts = {5: 0, 6: 0}
+        for polygon in groups.values():
+            count = len({tuple(round(v, 4) for v in corner[0]) for corner in polygon})
+            polygon_counts[count] += 1
+            # PNG's dark pentagon is above its white hexagon. OBJ V is bottom-up.
+            v = sum(corner[1][1] for corner in polygon) / len(polygon)
+            if count == 5:
+                self.assertGreater(v, 0.5)
+            else:
+                self.assertLess(v, 0.5)
+        self.assertEqual(polygon_counts, {5: 12, 6: 20})
+
     def test_v2_and_transform(self):
         mesh = mesh_asset.decode(mesh_v2())
         self.assertEqual(len(base64.b64decode(mesh["positions"])), 36)
@@ -128,6 +162,17 @@ class ResolverTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def test_public_gzip_delivery_and_expanded_size_limit(self):
+        response = io.BytesIO(gzip.compress(mesh_v2()))
+        response.headers = {"Content-Encoding": "gzip"}
+        with patch.object(assets.urllib.request, "urlopen", return_value=response):
+            self.assertEqual(assets.read_public("123"), mesh_v2())
+        response = io.BytesIO(gzip.compress(b"x" * 100))
+        response.headers = {"Content-Encoding": "gzip"}
+        with (patch.object(assets.urllib.request, "urlopen", return_value=response),
+              patch.object(assets, "MAX_BYTES", 50), self.assertRaises(assets.AssetError)):
+            assets.read_public("123")
+
     def test_public_and_cache(self):
         with (
             patch.object(assets, "read_public", return_value=mesh_v2()) as public,
@@ -137,6 +182,17 @@ class ResolverTests(unittest.TestCase):
             self.assertEqual(self.resolver.download("123"), mesh_v2())
             self.assertEqual(public.call_count, 1)
             raven.assert_not_called()
+
+    def test_old_mesh_decode_cache_is_rebuilt(self):
+        import hashlib
+        data = mesh_v2()
+        cache = self.resolver.root / "123.mesh.json"
+        cache.write_text(json.dumps({"digest": hashlib.sha256(data).hexdigest(),
+                                     "data": {"uvs": "old flipped UVs"}}))
+        with patch.object(self.resolver, "download", return_value=data):
+            result = self.resolver.mesh("123")
+        self.assertEqual(result, mesh_asset.decode(data))
+        self.assertEqual(json.loads(cache.read_text())["revision"], assets.MESH_DECODER_VERSION)
 
     def test_authenticated_fallback(self):
         def download(_, args, **kwargs):

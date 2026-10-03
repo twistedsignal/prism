@@ -34,6 +34,46 @@ def texel(baked, uv):
 
 
 class AppearanceTests(unittest.TestCase):
+    def test_union_colors_preserve_separate_faces_and_corner_gradients(self):
+        corners = scene.block([1, 1, 1])[:6]
+        colors = [1, 0, 0] * 3 + [0, 0, 1] * 3
+        result, baked = appearance.bake_colors(corners, colors)
+        self.assertEqual([c[0] for c in result], [c[0] for c in corners])
+        self.assertEqual([c[2] for c in result], [c[2] for c in corners])
+        self.assertEqual(texel(baked, result[0][1]), (255, 0, 0, 255))
+        self.assertEqual(texel(baked, result[3][1]), (0, 0, 255, 255))
+        result, baked = appearance.bake_colors(corners[:3], [1,0,0, 0,1,0, 0,0,1])
+        self.assertEqual([texel(baked, c[1]) for c in result],
+                         [(255,0,0,255), (0,255,0,255), (0,0,255,255)])
+
+    def test_material_detail_multiplies_union_colors_before_decals(self):
+        corners = scene.block([1,1,1])
+        colored, palette = appearance.bake_colors(corners, [1,0,0] * len(corners))
+        detail = texture([[[128,128,128,255]]])
+        result, baked = appearance.bake(colored, [1,1,1], [1,1,1],
+            {"id": "palette", "mode": "alpha"},
+            [{"id": "detail", "repeat": [1,1], "multiply": True}],
+            {"palette": palette, "detail": detail})
+        sample = texel(baked, result[0][1])
+        self.assertEqual(sample, (128,0,0,255))
+
+    def test_union_colors_reach_obj_materials_and_validate_buffers(self):
+        import copy
+        import struct
+        pack = lambda values: base64.b64encode(struct.pack(f"<{len(values)}f", *values)).decode()
+        mesh = {"positions": pack([0,0,0, 1,0,0, 0,1,0]),
+                "colors": pack([1,0,0] * 3), "center": False}
+        part = {"kind": "mesh", "mesh": mesh, "size": [1,1,1], "color": "#00FF00",
+                "cframe": [0,0,0, 1,0,0, 0,1,0, 0,0,1]}
+        with tempfile.TemporaryDirectory() as directory:
+            scene.build({"parts": [part]}, directory)
+            self.assertIn("map_Kd texture1.png", (Path(directory) / "model.mtl").read_text())
+            for colors in ([1,0,0], [2,0,0] * 3):
+                bad = copy.deepcopy(part)
+                bad["mesh"]["colors"] = pack(colors)
+                with self.assertRaises(scene.SceneError):
+                    scene.build({"parts": [bad]}, directory)
+
     def test_r15_native_hand_lower_leg_and_foot_joints_use_limb_rows(self):
         template = np.zeros((559, 585, 4), dtype=np.uint8)
         template[:] = [255, 255, 255, 255]

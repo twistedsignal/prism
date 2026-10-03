@@ -17,6 +17,7 @@ Payload (all coordinates are Roblox studs, Y up, relative to the model pivot):
           "positions": base64 float32 xyz per triangle corner,
           "uvs": base64 float32 uv per corner (Roblox convention, v down) or null,
           "normals": base64 float32 xyz per corner or null,
+          "colors": base64 float32 RGB per corner or null,
           "scale": [x, y, z], "offset": [x, y, z], "center": true
         }
       }],
@@ -457,9 +458,20 @@ def build(payload, directory):
             rgb = roblox_materials.neon_color(rgb)
         surface = material_texture(part, textures)
         layers = list(part.get("layers") or [])
-        if surface and layers:
+        colors = decode_floats(part["mesh"].get("colors"), "mesh colors") if kind == "mesh" else None
+        if colors is not None:
+            if len(colors) != len(corners) * 3 or any(c < 0 or c > 1 for c in colors):
+                raise SceneError("Mesh colors must have one RGB value in [0, 1] per corner")
+            import appearance
+            corners, baked = appearance.bake_colors(corners, colors)
+            color_id = f"union-colors:{index}"
+            textures[color_id] = baked
+            texture = {"id": color_id, "mode": "alpha"}
+            rgb = (1.0, 1.0, 1.0)
+        if surface and (layers or colors is not None):
             # Decals and clothing sit on top of the material.
-            layers.insert(0, {"id": surface[0], "repeat": [surface[1], surface[1]], "tint": list(rgb)})
+            layers.insert(0, {"id": surface[0], "repeat": [surface[1], surface[1]], "tint": list(rgb),
+                              "multiply": colors is not None})
         if layers:
             import appearance
             corners, baked = appearance.bake(corners, size, rgb, texture, layers, textures,
@@ -550,7 +562,7 @@ class SceneCache:
             payload, recovery_warnings, incomplete = self.resolver.resolve(payload)
         # Resolved bytes change the ID after credential repair, invalidating renderer objects.
         resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        identifier = scene_id(b"appearance-v8:" + resolved)
+        identifier = scene_id(b"appearance-v9:" + resolved)
         if incomplete:
             identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier
