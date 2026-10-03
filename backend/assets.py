@@ -405,6 +405,8 @@ class Resolver:
                     incomplete = True
             references = [("texture", part.get("texture"))]
             references += [("layer", layer) for layer in part.get("layers", [])]
+            if isinstance(part.get("material"), dict):
+                references.append(("material", part["material"].get("texture")))
             retained_layers = []
             for kind, texture in references:
                 if not texture:
@@ -426,7 +428,12 @@ class Resolver:
                 except (AssetError, OSError, ValueError, RuntimeError) as error:
                     (self.root / identifier).unlink(missing_ok=True)
                     failures[identifier] = str(error)
-                    warnings.append(f"Texture {identifier}: {error}; using part color")
+                    if kind == "material":
+                        # Fall back to the variant's base material texture.
+                        warnings.append(f"MaterialVariant texture {identifier}: {error}; using the base material")
+                        part["material"].pop("texture", None)
+                    else:
+                        warnings.append(f"Texture {identifier}: {error}; using part color")
                     if kind == "texture":
                         part.pop("texture", None)
                     incomplete = True

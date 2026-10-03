@@ -81,4 +81,22 @@ with tempfile.TemporaryDirectory() as directory:
         engine.render(key, {**settings, "text": "Changed"}, 128, "8")
         assert read.call_count == 1, f"Changing the text rerendered {read.call_count} passes"
 
+    # Settings the plugin hides must not change a Blender render either.
+    hidden = [
+        ({"orthographic": True}, {"fov": 90, "fovAuto": False}),
+        ({"castShadows": False}, {"shadowIntensity": 1.0}),
+        ({"specular": 0}, {"roughness": 0.0}),
+        ({"cavity": False}, {"worldRidge": 0.0, "worldValley": 2.5, "screenRidge": 2.0, "minAngle": 0}),
+    ]
+    for requirement, change in hidden:
+        first = engine.render(key, {**requirement, "outlineSize": 0, "dropShadow": False}, 64, "8")
+        second = engine.render(key, {**requirement, **change, "outlineSize": 0, "dropShadow": False}, 64, "8")
+        assert np.array_equal(first, second), f"{change} changed the render while {requirement}"
+
+    text_effects = engine.render(key, {"text": "Hi", "textColor": "#FFFFFF00", "textOutlineSize": 4,
+                                       "textGlow": True, "textShadow": True, "textGradient": True}, 128, "8")
+    assert not np.allclose(text_effects, base), "Outline-only text drew nothing"
+    spaced = engine.text.render(str(directory), schema.normalize({"text": "Prism", "textLetterSpacing": 2}), 128, "8")
+    assert np.ptp(np.nonzero(spaced > 0.5)[1]) > np.ptp(np.nonzero(text > 0.5)[1]), "Letter spacing did nothing"
+
 print("Blender effect checks passed")

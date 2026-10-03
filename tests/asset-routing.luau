@@ -13,9 +13,18 @@ local services = {
     end },
     StudioService = { GetUserId = function() return 42 end },
 }
+local material = function(name) return { Name = name } end
+local Materials = { Plastic = material('Plastic'), SmoothPlastic = material('SmoothPlastic'),
+    Wood = material('Wood'), Brick = material('Brick') }
+local variants, overrides = {}, {}
+services.MaterialService = {
+    GetDescendants = function() return variants end,
+    GetBaseMaterialOverride = function(_, base) return overrides[base.Name] or '' end,
+}
 local content = function(id) return { SourceType = 'Uri', Uri = 'rbxassetid://' .. tostring(id) } end
 local part = {
     Name = 'Handle', Transparency = 0, Color = roblox.Color3.new(1, 1, 1),
+    Material = Materials.Plastic, MaterialVariant = '',
     Size = roblox.Vector3.one, MeshSize = roblox.Vector3.one, CFrame = roblox.CFrame.identity,
     MeshContent = content(123), TextureContent = content(123),
     IsA = function(_, class) return class == 'BasePart' or class == 'MeshPart' or class == 'PVInstance' end,
@@ -29,7 +38,7 @@ local serializer = luau.load(code, { environment = {
     game = { GetService = function(_, name) return services[name] end, CreatorId = 10, CreatorType = 'User' },
     typeof = function(value) return if type(value) == 'table' and value.SourceType then 'Content' else typeof(value) end,
     Enum = { ContentSourceType = { Uri = 'Uri', None = 'None', Object = 'Object' },
-        InfoType = { Asset = 'Asset' }, CreatorType = { Group = 'Group' },
+        InfoType = { Asset = 'Asset' }, CreatorType = { Group = 'Group' }, Material = Materials,
         PartType = { Block = 'Block', Ball = 'Ball', Cylinder = 'Cylinder', Wedge = 'Wedge', CornerWedge = 'CornerWedge' },
         MeshType = { Brick = 'Brick', Sphere = 'Sphere', Cylinder = 'Cylinder', Wedge = 'Wedge', Head = 'Head' } },
     Vector3 = roblox.Vector3, CFrame = roblox.CFrame,
@@ -75,3 +84,24 @@ part.FindFirstChildWhichIsA = function() return nil end
 part.Shape = 'Block'
 assert(serializer.serialize(part).payload.parts[1].kind == 'block', 'A part named Head must retain its actual shape')
 print('Built-in head shape, scale and offset checks passed')
+
+-- Built-in materials are sent by name; MaterialVariants send their ColorMap and tiling.
+part.MeshContent, part.TextureContent = nil, nil
+assert(serializer.serialize(part).payload.parts[1].material == nil, 'Plastic must stay a plain color')
+part.Material = Materials.Wood
+local wood = serializer.serialize(part).payload.parts[1]
+assert(wood.material.name == 'Wood' and wood.material.texture == nil)
+table.insert(variants, {
+    Name = 'Oak', BaseMaterial = Materials.Wood, StudsPerTile = 6, ColorMapContent = content(789),
+    IsA = function(_, class) return class == 'MaterialVariant' end,
+})
+part.MaterialVariant = 'Oak'
+local oak = serializer.serialize(part).payload.parts[1]
+assert(oak.material.variant == 'Oak' and oak.material.studsPerTile == 6)
+assert(oak.material.texture.assetId == '789', 'Variant ColorMaps must reach the backend')
+part.MaterialVariant = ''
+overrides.Wood = 'Oak'
+assert(serializer.serialize(part).payload.parts[1].material.variant == 'Oak', 'Base material overrides apply')
+part.Material = Materials.Brick
+assert(serializer.serialize(part).payload.parts[1].material.variant == nil, 'Variants only match their base material')
+print('Material and MaterialVariant serialization checks passed')

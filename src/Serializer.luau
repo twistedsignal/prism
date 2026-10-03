@@ -3,6 +3,7 @@
 const AssetService = game:GetService("AssetService")
 const Base64 = require("./Base64")
 const MarketplaceService = game:GetService("MarketplaceService")
+const MaterialService = game:GetService("MaterialService")
 const StudioService = game:GetService("StudioService")
 
 const YIELD_EVERY = 3000
@@ -323,6 +324,14 @@ type Context = {
 	textures: { [string]: { width: number, height: number, pixels: string } },
 	failedTextures: { [string]: boolean },
 	warnings: { string },
+	-- MaterialVariants in MaterialService, by "<BaseMaterial>/<Name>"; built on first use.
+	variants: { [string]: MaterialVariant }?,
+}
+
+-- materials that render as a plain color unless a MaterialVariant overrides them.
+const PLAIN_MATERIALS = {
+	[Enum.Material.Plastic] = true,
+	[Enum.Material.SmoothPlastic] = true,
 }
 
 const function warnOnce(context: Context, message: string)
@@ -458,6 +467,45 @@ const function appearanceLayers(context: Context, part: BasePart): { any }
 	return layers
 end
 
+const function findVariant(context: Context, part: BasePart): MaterialVariant?
+	local name = part.MaterialVariant
+	if name == "" then
+		-- MaterialService can replace a base material everywhere.
+		const ok, override = pcall(function()
+			return MaterialService:GetBaseMaterialOverride(part.Material)
+		end)
+		name = if ok and type(override) == "string" then override else ""
+	end
+	if name == "" then
+		return nil
+	end
+	if context.variants == nil then
+		const variants = {}
+		for _, descendant in MaterialService:GetDescendants() do
+			if descendant:IsA("MaterialVariant") then
+				variants[`{descendant.BaseMaterial.Name}/{descendant.Name}`] = descendant
+			end
+		end
+		context.variants = variants
+	end
+	return (context.variants :: any)[`{part.Material.Name}/{name}`]
+end
+
+-- the part's material: a MaterialVariant's ColorMap, or the built-in material name.
+const function materialOf(context: Context, part: BasePart): { [string]: any }?
+	const variant = findVariant(context, part)
+	if variant == nil and PLAIN_MATERIALS[part.Material] then
+		return nil
+	end
+	const material: { [string]: any } = { name = part.Material.Name }
+	if variant then
+		material.variant = variant.Name
+		material.studsPerTile = variant.StudsPerTile
+		material.texture = addTexture(context, contentOf(variant, "ColorMapContent", "ColorMap"), "overlay")
+	end
+	return material
+end
+
 const function serializePart(context: Context, part: BasePart, relative: CFrame): { [string]: any }?
 	if part.Transparency >= 1 then
 		return nil
@@ -530,6 +578,10 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 		entry.kind = "block"
 	end
 
+	-- TextureIDs and SurfaceAppearances replace the material's color.
+	if entry.texture == nil then
+		entry.material = materialOf(context, part)
+	end
 	entry.layers = appearanceLayers(context, part)
 	if entry.warning then
 		warnOnce(context, entry.warning)

@@ -1067,8 +1067,9 @@ def render_pixels(directory, objects, minimum_angle, cache=None, key=None, norma
 # TEXT
 # ============================================================
 
+# Settings that change the rasterized text shape; colors and text effects are applied afterwards.
 TEXT_KEYS = ("text", "textFont", "textSize", "textRotation", "textWeight", "textBold", "textItalic",
-             "textUnderline", "textStrikethrough")
+             "textUnderline", "textStrikethrough", "textLetterSpacing", "textLineSpacing")
 # Synthetic styles, in units of the font size, when the font has no matching face.
 ITALIC_SHEAR = 0.2
 WEIGHT_OFFSET_PER_100 = 0.01
@@ -1131,6 +1132,8 @@ class TextLayer:
         curve.size = size
         curve.shear = shear
         curve.offset = offset
+        curve.space_character = settings["textLetterSpacing"]
+        curve.space_line = settings["textLineSpacing"]
         if underline:
             for character in curve.body_format:
                 character.use_underline = True

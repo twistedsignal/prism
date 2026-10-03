@@ -42,7 +42,63 @@ def required_passes(settings):
 
 
 def text_visible(settings):
-    return bool(settings["text"].strip()) and schema.hex_to_rgba(settings["textColor"])[3] > 0
+    """Text shows when any of its layers is visible, so outline-only text works."""
+    if not settings["text"].strip():
+        return False
+    return (
+        schema.hex_to_rgba(settings["textColor"])[3] > 0
+        or (settings["textGradient"] and schema.hex_to_rgba(settings["textGradientColor"])[3] > 0)
+        or (settings["textOutlineSize"] > 0 and schema.hex_to_rgba(settings["textOutlineColor"])[3] > 0)
+        or (settings["textGlow"] and schema.hex_to_rgba(settings["textGlowColor"])[3] > 0)
+        or (settings["textShadow"] and schema.hex_to_rgba(settings["textShadowColor"])[3] > 0)
+    )
+
+
+def text_fill(mask, settings):
+    """Per-pixel straight RGBA for the text fill: solid, or a gradient across the text's bounds."""
+    start = np.asarray(schema.hex_to_rgba(settings["textColor"]), dtype=np.float32)
+    if not settings["textGradient"]:
+        return np.broadcast_to(start, mask.shape + (4,))
+    end = np.asarray(schema.hex_to_rgba(settings["textGradientColor"]), dtype=np.float32)
+    height, width = mask.shape
+    rows, columns = np.mgrid[0:height, 0:width].astype(np.float32)
+    # Rows run bottom to top; the angle is measured clockwise on screen.
+    angle = math.radians(settings["textGradientAngle"])
+    projection = columns * math.cos(angle) + (height - 1 - rows) * math.sin(angle)
+    covered = mask > 0.05
+    low, high = (projection[covered].min(), projection[covered].max()) if np.any(covered) else (0.0, 1.0)
+    t = np.clip((projection - low) / max(high - low, 1e-6), 0.0, 1.0)[..., None]
+    return start + (end - start) * t
+
+
+def text_layers(mask, settings, scale, cached):
+    """Text shadow, glow, outline and fill as (rgb, alpha) layers, back to front."""
+    layers = []
+    signature = tuple(settings[name] for name in sorted(settings) if name.startswith("text"))
+    if settings["textShadow"]:
+        *color, opacity = schema.hex_to_rgba(settings["textShadowColor"])
+        sigma = settings["textShadowBlur"] * scale
+        blurred = cached(("textShadow", signature, sigma), lambda: blur_mask(mask, sigma))
+        dx = int(round(settings["textShadowOffsetX"] * scale))
+        dy = int(round(settings["textShadowOffsetY"] * scale))
+        layers.append((color, shift_mask(blurred, dx, -dy) * opacity))
+    if settings["textGlow"]:
+        *color, opacity = schema.hex_to_rgba(settings["textGlowColor"])
+        size = settings["textGlowSize"] * scale
+
+        def make_glow():
+            expanded = fractional_dilation(mask, max(0.5, size * 0.35))
+            return np.clip(blur_mask(expanded, size * 0.5) * 1.6, 0.0, 1.0)
+
+        layers.append((color, cached(("textGlow", signature, size), make_glow) * opacity))
+    if settings["textOutlineSize"] > 0:
+        *color, opacity = schema.hex_to_rgba(settings["textOutlineColor"])
+        width = settings["textOutlineSize"] * scale
+        outline = cached(("textOutline", signature, width), lambda: fractional_dilation(mask, width))
+        layers.append((color, np.clip(outline, 0.0, 1.0) * opacity))
+    fill = text_fill(mask, settings)
+    layers.append((fill[..., :3], mask * fill[..., 3]))
+    return layers
 
 
 def shift_mask(mask, dx, dy):
@@ -549,8 +605,8 @@ def post_process_pixels(pixels, settings, size, cache=None, key=None, passes=Non
         image = crt(image, settings["crtScanlines"], settings["crtCurvature"], scale)
     text = passes.get("text")
     if text is not None and text_visible(settings):
-        *color, opacity = schema.hex_to_rgba(settings["textColor"])
-        image = over(image, color, np.clip(text, 0.0, 1.0) * opacity)
+        for color, amount in text_layers(np.clip(text, 0.0, 1.0), settings, scale, cached):
+            image = over(image, color, amount)
 
     image = np.clip(image, 0.0, 1.0)
     result = np.zeros_like(pixels)

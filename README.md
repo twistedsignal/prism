@@ -45,14 +45,17 @@ Uninstalling removes the startup entry, backend, cache and plugin. It doesn't ne
 
 ### Effects
 
-Every effect runs on the finished render, so tweaking one never waits on Blender. The extra sections start collapsed:
+Settings are organized into sections with collapsible groups inside them. A setting only shows when it matters: for example, **X-ray color** appears once **Enable X-ray** is on, and **FOV** hides while the camera is orthographic. Hidden settings never change the render.
 
-- **Effects:** saturation, contrast, brightness, outline, drop shadow and glow.
+Every effect runs on the finished render, so tweaking one never waits on Blender. The effect sections start collapsed:
+
+- **Adjustments:** saturation, contrast and brightness.
+- **Silhouette:** outline, drop shadow, glow and inner shadow.
 - **Color:** color overlay (RGBA, so its alpha sets the strength), cel shading, heatmap (by brightness or depth), duotone and tritone.
 - **Stylize:** halftone, ordered dither, pixelate (nearest-neighbor), chromatic aberration, CRT and bloom.
 - **Depth:** X-ray, depth tint and depth outlines between overlapping parts.
-- **Inner shadow** and **Vignette** (color, strength and opacity at the image border).
-- **Text:** centered over the render and drawn above every other effect, including the color overlay. Pick the font, size, rotation, weight, RGBA color, bold, italic, underline and strikethrough. Type `\n` for a new line. The font list shows Roblox Studio's fonts first, then your system fonts. Prism uses a font's own bold and italic faces when it has them, and synthesizes the rest.
+- **Vignette:** color, strength and opacity at the image border.
+- **Text:** centered over the render and drawn above every other effect, including the color overlay. Pick the font, size, weight, bold, italic, rotation, letter and line spacing, an RGBA fill with an optional gradient, underline, strikethrough, an outline, a glow and a drop shadow. Make the fill transparent for outline-only text. Type `\n` for a new line. The font list shows Roblox Studio's fonts first, then your system fonts. Prism uses a font's own bold and italic faces when it has them, and synthesizes the rest.
 
 Presets are saved on your computer, so they work in every game. The **Settings** tab holds the output folder, file names, render sizes, quality, the default upload creator and the backend port. Changing the port restarts the backend on the new port.
 
@@ -62,7 +65,8 @@ If the header says **HTTP access blocked**, allow Prism to reach `127.0.0.1` und
 
 - Prism first reads meshes and textures through Studio's editable APIs. If Studio cannot read them, the backend tries anonymous Asset Delivery, then Raven with your saved API key. Successful downloads and decoded meshes/images are cached on disk. Known foreign assets skip Studio editable reads. Denied legacy delivery routes are remembered for 24 hours, with temporary network failures retried after a minute; Raven recovery continues immediately. Assets that still cannot be recovered show a warning and use boxes or part color.
 - Plugins can't read union (CSG) geometry, so unions are drawn as boxes.
-- Classic shirts, pants and T-shirts render on R6/R15 body parts. Face decals, other decals and tiled Texture objects are composited over part color or mesh textures, preserving alpha and tint. Custom body shapes use a face projection of the classic template; Studio's layered-clothing cage deformation and Roblox material textures are not reproduced.
+- Classic shirts, pants and T-shirts render on R6/R15 body parts. Face decals, other decals and tiled Texture objects are composited over part color or mesh textures, preserving alpha and tint. Custom body shapes use a face projection of the classic template; Studio's layered-clothing cage deformation is not reproduced.
+- Materials tile across parts in studs and are tinted by the part color, like in Studio. Custom MaterialVariants, including MaterialService base-material overrides, render with their own ColorMap and StudsPerTile. Roblox doesn't ship its built-in material textures with Studio, so Prism generates matching detail textures for them (wood grain, planks, bricks, cobblestone, stone, metal, fabric and more). They look close, not identical. Neon is brightened; Plastic, SmoothPlastic and Glass stay plain colors. TextureIDs and SurfaceAppearances replace the material, as in Roblox.
 
 ## How it works
 

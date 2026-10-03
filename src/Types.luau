@@ -24,13 +24,25 @@ export type SettingSchema = {
 	-- "fonts": options come from the backend's installed fonts.
 	optionsSource: string?,
 	maxLength: number?,
+	-- hide unless this setting is on, non-zero or non-empty; "!key" inverts it.
+	requires: string?,
+}
+
+-- a collapsible sub-section inside a section; groups can nest.
+export type GroupSchema = {
+	type: "group",
+	id: string,
+	label: string,
+	collapsed: boolean?,
+	requires: string?,
+	settings: { SettingSchema | GroupSchema },
 }
 
 export type SectionSchema = {
 	id: string,
 	label: string,
 	collapsed: boolean?,
-	settings: { SettingSchema },
+	settings: { SettingSchema | GroupSchema },
 }
 
 export type Schema = {

@@ -161,6 +161,81 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(settings["textFont"], "Fredoka One")
         self.assertEqual(schema.normalize({"colorOverlayColor": "red"})["colorOverlayColor"], "#FF3B3B80")
 
+    def requirements(self):
+        """Each setting's own requirement plus those inherited from its groups."""
+        found = {}
+
+        def visit(items, inherited):
+            for item in items:
+                needs = inherited + ([item["requires"]] if "requires" in item else [])
+                if item.get("type") == "group":
+                    visit(item["settings"], needs)
+                else:
+                    found[item["key"]] = needs
+
+        for section in schema.SECTIONS:
+            visit(section["settings"], [])
+        return found
+
+    def test_requirements_name_real_settings(self):
+        for key, needs in self.requirements().items():
+            for need in needs:
+                self.assertIn(need.lstrip("!"), schema.SETTINGS, key)
+                self.assertNotEqual(need.lstrip("!"), key)
+
+    def test_hidden_effect_settings_never_change_the_render(self):
+        pixels = np.zeros((32, 32, 4), dtype=np.float32)
+        pixels[8:24, 8:24] = [0.8, 0.4, 0.1, 1]
+        normals = np.zeros_like(pixels)
+        normals[..., 2] = 0.8
+        depth = np.zeros_like(pixels)
+        depth[..., 0] = np.linspace(0, 1, 32)[None, :]
+        text = np.zeros((32, 32), dtype=np.float32)
+        text[12:20, 6:26] = 1
+        passes = {"normals": normals, "depth": depth, "text": text, "flat": pixels.copy()}
+
+        def off(need, values):
+            key = need.lstrip("!")
+            setting = schema.SETTINGS[key]
+            if need.startswith("!"):
+                values[key] = True
+            elif setting["type"] == "bool":
+                values[key] = False
+            elif setting["type"] == "number":
+                values[key] = 0
+            else:
+                values[key] = ""
+
+        def changed(setting):
+            kind = setting["type"]
+            if kind == "bool":
+                return not setting["default"]
+            if kind == "number":
+                return setting["max"] if setting["default"] != setting["max"] else setting["min"]
+            if kind == "color":
+                return "#123456"
+            if kind == "rgba":
+                return "#12345678"
+            if kind == "select":
+                others = [option["value"] for option in setting["options"] if option["value"] != setting["default"]]
+                return others[0] if others else "Some font"
+            return "changed"
+
+        checked = 0
+        for key, needs in self.requirements().items():
+            if not needs or key not in schema.EFFECT_KEYS:
+                continue
+            values = {"dropShadow": False}
+            for need in needs:
+                off(need, values)
+            with self.subTest(key=key):
+                base = effects.post_process_pixels(pixels, schema.normalize(values), 32, passes=passes)
+                values[key] = changed(schema.SETTINGS[key])
+                hidden = effects.post_process_pixels(pixels, schema.normalize(values), 32, passes=passes)
+                np.testing.assert_array_equal(hidden, base)
+                checked += 1
+        self.assertGreater(checked, 40)
+
     def test_effect_sections_never_rerender_in_blender(self):
         for key in ("text", "textFont", "xray", "vignetteOpacity", "colorOverlayColor", "saturation", "glow"):
             self.assertIn(key, schema.EFFECT_KEYS)

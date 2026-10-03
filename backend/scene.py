@@ -11,6 +11,8 @@ Payload (all coordinates are Roblox studs, Y up, relative to the model pivot):
         "color": "#RRGGBB",
         "transparency": 0,
         "texture": {"id": "<key in textures>", "mode": "overlay" | "alpha"},
+        "material": {"name": "Wood", "variant": "Oak", "studsPerTile": 4,
+                     "texture": {"id": "<variant ColorMap key>"}},
         "mesh": {
           "positions": base64 float32 xyz per triangle corner,
           "uvs": base64 float32 uv per corner (Roblox convention, v down) or null,
@@ -117,6 +119,53 @@ def decode_texture(texture):
     if len(pixels) != width * height * 4:
         raise SceneError("Texture pixel count does not match its size")
     return width, height, pixels
+
+
+def multiply_texture(pixels, rgb):
+    """Tint a material detail map by the part color, as Roblox tints its materials."""
+    import numpy as np
+
+    data = np.frombuffer(pixels, dtype=np.uint8).reshape(-1, 4).astype(np.float32)
+    data[:, :3] *= np.asarray(rgb, dtype=np.float32)
+    data[:, 3] = 255
+    return (np.clip(data, 0, 255) + 0.5).astype(np.uint8).tobytes()
+
+
+def box_uvs(corners, studs_per_tile):
+    """World-scale UVs: project each triangle onto its dominant axis, one tile per studs_per_tile."""
+    result = []
+    for start in range(0, len(corners), 3):
+        triangle = corners[start:start + 3]
+        normal = [sum(corner[2][axis] for corner in triangle) for axis in range(3)]
+        if not any(normal):
+            normal = face_normal(*(corner[0] for corner in triangle))
+        axis = max(range(3), key=lambda index: abs(normal[index]))
+        u_axis, v_axis = {0: (2, 1), 1: (0, 2), 2: (0, 1)}[axis]
+        for point, _, corner_normal in triangle:
+            uv = (point[u_axis] / studs_per_tile, point[v_axis] / studs_per_tile)
+            result.append((point, uv, corner_normal))
+    return result
+
+
+def material_texture(part, textures):
+    """(texture id, studs per tile) for the part's material, or None for a plain color."""
+    # Imported lazily: the server imports this module and must not load numpy.
+    import materials as roblox_materials
+
+    material = part.get("material")
+    if not isinstance(material, dict) or part.get("texture"):
+        return None
+    reference = material.get("texture")
+    studs = material.get("studsPerTile")
+    if isinstance(reference, dict) and reference.get("id") in textures:
+        spacing = float(studs) if isinstance(studs, (int, float)) and math.isfinite(studs) and studs > 0 else 4.0
+        return reference["id"], spacing
+    name = material.get("name")
+    if isinstance(name, str) and roblox_materials.has_texture(name):
+        key = f"material:{name}"
+        textures[key] = roblox_materials.texture(name)
+        return key, roblox_materials.studs_per_tile(name)
+    return None
 
 
 def overlay_texture(pixels, rgb):
@@ -350,7 +399,7 @@ def build(payload, directory):
         if texture_id is not None and texture_id not in textures:
             warnings.append(f"Missing texture {texture_id}")
             texture_id = None
-        key = (rgb if texture_id is None or mode == "overlay" else None, transparency, texture_id, mode)
+        key = (rgb if texture_id is None or mode in ("overlay", "multiply") else None, transparency, texture_id, mode)
         if key in materials:
             return materials[key]
         name = f"Material{len(materials)}"
@@ -369,6 +418,8 @@ def build(payload, directory):
             width, height, pixels = decoded_textures[texture_id]
             if mode == "overlay":
                 pixels = overlay_texture(pixels, rgb)
+            elif mode == "multiply":
+                pixels = multiply_texture(pixels, rgb)
             filename = f"texture{len(materials)}.png"
             write_png(directory / filename, width, height, pixels)
             material_lines.append(f"map_Kd {filename}")
@@ -399,14 +450,26 @@ def build(payload, directory):
         position = cframe[:3]
         r = cframe[3:]
         texture = part.get("texture")
-        if part.get("layers"):
+        rgb = color_of(part)
+        if isinstance(part.get("material"), dict) and part["material"].get("name") == "Neon":
+            import materials as roblox_materials
+            rgb = roblox_materials.neon_color(rgb)
+        surface = material_texture(part, textures)
+        layers = list(part.get("layers") or [])
+        if surface and layers:
+            # Decals and clothing sit on top of the material.
+            layers.insert(0, {"id": surface[0], "repeat": [surface[1], surface[1]], "tint": list(rgb)})
+        if layers:
             import appearance
-            corners, baked = appearance.bake(corners, size, color_of(part), texture, part["layers"], textures,
+            corners, baked = appearance.bake(corners, size, rgb, texture, layers, textures,
                                              native_uv=kind == "mesh" and part["mesh"].get("uvs") is not None)
             baked_id = f"appearance:{index}"
             textures[baked_id] = baked
             texture = {"id": baked_id, "mode": "alpha"}
-        material = material_for(color_of(part), transparency, texture)
+        elif surface:
+            corners = box_uvs(corners, surface[1])
+            texture = {"id": surface[0], "mode": "multiply"}
+        material = material_for(rgb, transparency, texture)
         face_lines.append(f"usemtl {material}")
         positions, uvs, normals = [], [], []
         for point, uv, normal in corners:
@@ -467,7 +530,10 @@ class SceneCache:
                 raise SceneError("Part must be an object")
             if part.get("layers") and (not isinstance(part["layers"], list) or len(part["layers"]) > 64):
                 raise SceneError("Part layers must be an array of at most 64 appearances")
-            entries = [part.get("mesh"), part.get("texture"), *(part.get("layers") or [])]
+            if part.get("material") is not None and not isinstance(part["material"], dict):
+                raise SceneError("Part material must be an object")
+            entries = [part.get("mesh"), part.get("texture"), *(part.get("layers") or []),
+                       (part.get("material") or {}).get("texture")]
             for entry in entries:
                 if entry is not None and not isinstance(entry, dict):
                     raise SceneError("Part mesh, texture and layers must be objects")
@@ -482,7 +548,7 @@ class SceneCache:
             payload, recovery_warnings, incomplete = self.resolver.resolve(payload)
         # Resolved bytes change the ID after credential repair, invalidating renderer objects.
         resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        identifier = scene_id(b"appearance-v6:" + resolved)
+        identifier = scene_id(b"appearance-v7:" + resolved)
         if incomplete:
             identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier

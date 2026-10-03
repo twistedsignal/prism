@@ -11,6 +11,7 @@ const Theme = {
 	DARK = Color3.fromRGB(25, 26, 31),
 	DARKER = Color3.fromRGB(20, 21, 25),
 	SECTION = Color3.fromRGB(32, 34, 40),
+	GROUP = Color3.fromRGB(27, 29, 34),
 	ROW = Color3.fromRGB(24, 25, 30),
 	ROW_ALT = Color3.fromRGB(28, 29, 35),
 	BORDER = Color3.fromRGB(38, 40, 48),
@@ -27,6 +28,7 @@ const Theme = {
 	YELLOW = Color3.fromRGB(240, 190, 70),
 	ROW_HEIGHT = 34,
 	SECTION_HEIGHT = 30,
+	GROUP_HEIGHT = 26,
 	DROPDOWN_ROW_HEIGHT = 27,
 	OVERLAY_Z = 50,
 }

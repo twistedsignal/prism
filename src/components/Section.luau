@@ -14,7 +14,8 @@ export type Section = {
 	isExpanded: () -> boolean,
 }
 
-const function Section(parent: Instance, text: string, initialBodyHeight: number, collapsed: boolean?): Section
+-- nested sections are groups inside another section: a shorter, lighter header.
+const function Section(parent: Instance, text: string, initialBodyHeight: number, collapsed: boolean?, nested: boolean?): Section
 	const bodyHeight = source(initialBodyHeight)
 	const expanded = source(not collapsed)
 	local body: Frame
@@ -23,8 +24,8 @@ const function Section(parent: Instance, text: string, initialBodyHeight: number
 
 	const header = new("TextButton")({
 		Name = `{text}Header`,
-		Size = UDim2.new(1, 0, 0, Theme.SECTION_HEIGHT),
-		BackgroundColor3 = Theme.SECTION,
+		Size = UDim2.new(1, 0, 0, if nested then Theme.GROUP_HEIGHT else Theme.SECTION_HEIGHT),
+		BackgroundColor3 = if nested then Theme.GROUP else Theme.SECTION,
 		BorderSizePixel = 0,
 		Text = "",
 		AutoButtonColor = true,
@@ -52,9 +53,9 @@ const function Section(parent: Instance, text: string, initialBodyHeight: number
 			BackgroundTransparency = 1,
 			Text = text,
 			TextXAlignment = Enum.TextXAlignment.Left,
-			TextColor3 = Theme.TEXT,
+			TextColor3 = if nested then Theme.MUTED else Theme.TEXT,
 			Font = Enum.Font.SourceSansSemibold,
-			TextSize = 15,
+			TextSize = if nested then 14 else 15,
 		}),
 	})
 

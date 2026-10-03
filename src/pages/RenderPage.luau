@@ -17,6 +17,7 @@ const ModelCard = require("../components/ModelCard")
 const Preview = require("../components/Preview")
 const Modal = require("../components/Modal")
 const Store = require("../Store")
+const Requirements = require("../Requirements")
 
 const new = vide.create
 const source = vide.source
@@ -263,6 +264,149 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 		}),
 	}) :: Frame
 
+	const function bindVisibility(instance: GuiObject, requires: string?)
+		if requires then
+			effect(function()
+				instance.Visible = Requirements.met(requires, settings())
+			end)
+		end
+	end
+
+	const function buildRow(setting: Types.SettingSchema, rowIndex: number): Frame
+		const key = setting.key
+		local row: Frame
+		if setting.type == "number" then
+			const autoKey = setting.auto
+			row = SliderSetting({
+				name = setting.label,
+				index = rowIndex,
+				description = setting.description,
+				min = setting.min or 0,
+				max = setting.max or 1,
+				step = setting.step or 0.01,
+				value = function()
+					return settings()[key]
+				end,
+				onChange = function(value)
+					store.setValue(key, value)
+				end,
+				auto = if autoKey
+					then {
+						value = function()
+							return settings()[autoKey] == true
+						end,
+						onChange = function(value)
+							store.setValue(autoKey, value)
+						end,
+					}
+					else nil,
+			})
+		elseif setting.type == "bool" then
+			row = ToggleSetting({
+				name = setting.label,
+				index = rowIndex,
+				description = setting.description,
+				labelWidth = 0.36,
+				value = function()
+					return settings()[key] == true
+				end,
+				onChange = function(value)
+					store.setValue(key, value)
+				end,
+			})
+		elseif setting.type == "select" then
+			const options = function(): { Types.SelectOption }
+				const list = table.clone(setting.options or {})
+				if setting.optionsSource == "fonts" then
+					for _, font in store.fonts() do
+						table.insert(list, { value = font.value, label = font.label })
+					end
+				end
+				return list
+			end
+			row = DropdownSetting({
+				name = setting.label,
+				index = rowIndex,
+				description = setting.description,
+				text = function()
+					const current = settings()[key]
+					for _, option in options() do
+						if option.value == current then
+							return option.label
+						end
+					end
+					-- a saved font that isn't installed on this computer.
+					return if current == "" then "Default" else `{current} (missing)`
+				end,
+				options = options,
+				onSelect = function(value)
+					store.setValue(key, value)
+				end,
+			})
+		elseif setting.type == "text" then
+			row = TextBoxSetting({
+				name = setting.label,
+				index = rowIndex,
+				description = setting.description,
+				placeholderText = "None",
+				value = function()
+					return settings()[key] or ""
+				end,
+				onCommit = function(value)
+					store.setValue(key, string.sub(value, 1, setting.maxLength or 120))
+				end,
+			})
+		else
+			row = ColorSetting({
+				name = setting.label,
+				index = rowIndex,
+				description = setting.description,
+				alpha = setting.type == "rgba",
+				value = function()
+					return settings()[key]
+				end,
+				onChange = function(value)
+					store.setValue(key, value)
+				end,
+			})
+		end
+		bindVisibility(row, setting.requires)
+		return row
+	end
+
+	-- adds settings and nested groups to a section body; groups are collapsible sub-sections.
+	local buildItems: (Instance, { any }) -> ()
+	buildItems = function(parent: Instance, items: { any })
+		for index, item in items do
+			if item.type == "group" then
+				const group = item :: Types.GroupSchema
+				const holder = new("Frame")({
+					Name = group.label,
+					Size = UDim2.fromScale(1, 0),
+					AutomaticSize = Enum.AutomaticSize.Y,
+					BackgroundTransparency = 1,
+					LayoutOrder = index,
+					Parent = parent,
+
+					new("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
+					new("UIPadding")({ PaddingLeft = UDim.new(0, 10) }),
+				}) :: Frame
+				const sub = Section(holder, group.label, 0, group.collapsed, true)
+				sub.header.LayoutOrder = 1
+				sub.body.LayoutOrder = 2
+				const function updateHeight()
+					sub.setHeight(sub.layout.AbsoluteContentSize.Y)
+				end
+				cleanup(sub.layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateHeight))
+				buildItems(sub.body, group.settings)
+				task.defer(updateHeight)
+				bindVisibility(holder, group.requires)
+			elseif not item.hidden then
+				buildRow(item :: Types.SettingSchema, index).Parent = parent
+			end
+		end
+	end
+
 	for sectionIndex, sectionSchema in schema().sections do
 		const section = Section(container, sectionSchema.label, 0, sectionSchema.collapsed)
 		section.header.LayoutOrder = sectionIndex * 2
@@ -271,112 +415,7 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 			section.setHeight(section.layout.AbsoluteContentSize.Y)
 		end
 		cleanup(section.layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateHeight))
-
-		local rowIndex = 0
-		for _, setting in sectionSchema.settings do
-			if setting.hidden then
-				continue
-			end
-			rowIndex += 1
-			const key = setting.key
-			local row: Frame
-			if setting.type == "number" then
-				const autoKey = setting.auto
-				row = SliderSetting({
-					name = setting.label,
-					index = rowIndex,
-					description = setting.description,
-					min = setting.min or 0,
-					max = setting.max or 1,
-					step = setting.step or 0.01,
-					value = function()
-						return settings()[key]
-					end,
-					onChange = function(value)
-						store.setValue(key, value)
-					end,
-					auto = if autoKey
-						then {
-							value = function()
-								return settings()[autoKey] == true
-							end,
-							onChange = function(value)
-								store.setValue(autoKey, value)
-							end,
-						}
-						else nil,
-				})
-			elseif setting.type == "bool" then
-				row = ToggleSetting({
-					name = setting.label,
-					index = rowIndex,
-					description = setting.description,
-					labelWidth = 0.36,
-					value = function()
-						return settings()[key] == true
-					end,
-					onChange = function(value)
-						store.setValue(key, value)
-					end,
-				})
-			elseif setting.type == "select" then
-				const options = function(): { Types.SelectOption }
-					const list = table.clone(setting.options or {})
-					if setting.optionsSource == "fonts" then
-						for _, font in store.fonts() do
-							table.insert(list, { value = font.value, label = font.label })
-						end
-					end
-					return list
-				end
-				row = DropdownSetting({
-					name = setting.label,
-					index = rowIndex,
-					description = setting.description,
-					text = function()
-						const current = settings()[key]
-						for _, option in options() do
-							if option.value == current then
-								return option.label
-							end
-						end
-						-- a saved font that isn't installed on this computer.
-						return if current == "" then "Default" else `{current} (missing)`
-					end,
-					options = options,
-					onSelect = function(value)
-						store.setValue(key, value)
-					end,
-				})
-			elseif setting.type == "text" then
-				row = TextBoxSetting({
-					name = setting.label,
-					index = rowIndex,
-					description = setting.description,
-					placeholderText = "None",
-					value = function()
-						return settings()[key] or ""
-					end,
-					onCommit = function(value)
-						store.setValue(key, string.sub(value, 1, setting.maxLength or 120))
-					end,
-				})
-			else
-				row = ColorSetting({
-					name = setting.label,
-					index = rowIndex,
-					description = setting.description,
-					alpha = setting.type == "rgba",
-					value = function()
-						return settings()[key]
-					end,
-					onChange = function(value)
-						store.setValue(key, value)
-					end,
-				})
-			end
-			row.Parent = section.body
-		end
+		buildItems(section.body, sectionSchema.settings)
 		task.defer(updateHeight)
 	end
 
