@@ -21,7 +21,7 @@ function Invoke-PrismInstaller {
 
 	$repo = "twistedsignal/prism"
 	$credentialsUrl = "https://create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab"
-	$ravenTarball = "https://github.com/twistedsignal/raven/archive/refs/heads/main.tar.gz"
+	$ravenTarball = "https://github.com/twistedsignal/raven/archive/refs/tags/v0.3.0.tar.gz"
 	$port = 47821
 	$installDir = Join-Path $env:LOCALAPPDATA "Prism"
 	$pluginsDir = if ($env:PRISM_PLUGINS_DIR) { $env:PRISM_PLUGINS_DIR } else { Join-Path $env:LOCALAPPDATA "Roblox\Plugins" }
@@ -149,13 +149,14 @@ function Invoke-PrismInstaller {
 	}
 
 	$raven = Find-Raven
-	if (-not $raven) {
+	if (-not $raven -or -not ((& $raven asset download --help 2>$null) -match "--output")) {
 		Write-Host ""
-		Write-Host "You do not have Raven installed! Installing..." -ForegroundColor Yellow
+		Write-Host "Installing Raven v0.3.0 asset download support..." -ForegroundColor Yellow
 		& npm install -g $ravenTarball *> $null
 		if ($LASTEXITCODE -ne 0) { Stop-Install "Could not install Raven with npm." }
 		$raven = Find-Raven
 		if (-not $raven) { Stop-Install "Raven was installed but couldn't be found. Make sure npm's global folder is on your PATH." }
+		if (-not ((& $raven asset download --help 2>$null) -match "--output")) { Stop-Install "Raven asset download support is still unavailable. Check your npm installation." }
 		Write-Host ""
 		Write-Ok "Raven has been installed."
 	}
@@ -186,16 +187,25 @@ function Invoke-PrismInstaller {
 		if ($info.enabled -eq $false) { return @{ Ok = $false; Reason = "That key is disabled. Enable it on the Creator Dashboard." } }
 		if ($info.expired) { return @{ Ok = $false; Reason = "That key has expired. Create a new one." } }
 		$canWrite = $false
+		$canRead = $false
+		$canDownload = $false
 		foreach ($scope in @($info.scopes)) {
 			if ($scope -is [string]) {
 				if ($scope -match '^assets?:write$') { $canWrite = $true }
-			} elseif ($scope.name -match '^assets?$' -and (@($scope.operations) -contains "write")) {
-				$canWrite = $true
+				if ($scope -match '^assets?:read$') { $canRead = $true }
+				if ($scope -match '^legacy-asset:manage$') { $canDownload = $true }
+			} else {
+				if ($scope.name -match '^assets?$') {
+					$canWrite = $canWrite -or (@($scope.operations) -contains "write")
+					$canRead = $canRead -or (@($scope.operations) -contains "read")
+				}
+				if ($scope.name -eq 'legacy-asset') { $canDownload = $canDownload -or (@($scope.operations) -contains "manage") }
 			}
 		}
-		if (-not $canWrite) {
-			return @{ Ok = $false; Reason = "That key is missing the Assets API with Write access. Edit the key and add it." }
+		if (-not $canWrite -or -not $canRead) {
+			return @{ Ok = $false; Reason = "That key needs Assets Read and Write access. Edit the key and add them." }
 		}
+		if (-not $canDownload) { return @{ Ok = $false; Reason = "That key needs Legacy Assets Manage access. Edit the existing key and add it." } }
 		return @{ Ok = $true; Name = [string]$info.name; OwnerId = [string]$info.authorizedUserId }
 	}
 
@@ -215,6 +225,8 @@ function Invoke-PrismInstaller {
 				$apiKey = $existing.apiKey
 				$keyInfo = $check
 			}
+		} else {
+			Write-Host $check.Reason -ForegroundColor Yellow
 		}
 	}
 
@@ -229,7 +241,8 @@ function Invoke-PrismInstaller {
 		Write-Host "  1. Click Create API Key and give it a name, like Prism."
 		Write-Host "  2. Under Access Permissions, add the API System Assets."
 		Write-Host "  3. Give it Read and Write."
-		Write-Host "  4. Click Save & Generate Key, then copy the key."
+		Write-Host "  4. Add Legacy Assets with Manage access."
+		Write-Host "  5. Save the key, then copy it. Existing users can edit their current key."
 		Write-Host "  A personal key can upload to any group you have access to." -ForegroundColor DarkGray
 		Write-Host ""
 		Read-Host "Press enter when done." | Out-Null
@@ -250,18 +263,20 @@ function Invoke-PrismInstaller {
 			Write-Host $check.Reason -ForegroundColor Red
 		}
 
-		$features = @()
-		if ($existing -and $existing.features) { $features = @($existing.features) }
-		if ($features -notcontains "asset") { $features += "asset" }
-		$saved = [ordered]@{ apiKey = $apiKey }
-		if ($keyInfo.Name) { $saved.name = $keyInfo.Name }
-		if ($keyInfo.OwnerId) { $saved.ownerId = $keyInfo.OwnerId }
-		$saved.features = $features
-		$saved.savedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-		New-Item -ItemType Directory -Force -Path $ravenDir | Out-Null
-		# Node can't parse JSON with a BOM, so write UTF-8 without one.
-		[IO.File]::WriteAllText($credentials, ($saved | ConvertTo-Json) + "`n", (New-Object Text.UTF8Encoding $false))
 	}
+	$features = @()
+	if ($existing -and $existing.features) { $features = @($existing.features) }
+	if ($features -notcontains "asset") { $features += "asset" }
+	if ($features -notcontains "asset-download") { $features += "asset-download" }
+	$saved = [ordered]@{ apiKey = $apiKey }
+	if ($keyInfo.Name) { $saved.name = $keyInfo.Name }
+	if ($keyInfo.OwnerId) { $saved.ownerId = $keyInfo.OwnerId }
+	# Older Raven logins without a feature list enable all commands.
+	if (-not $existing -or -not $existing.apiKey -or $null -ne $existing.features) { $saved.features = $features }
+	$saved.savedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+	New-Item -ItemType Directory -Force -Path $ravenDir | Out-Null
+	# Node can't parse JSON with a BOM, so write UTF-8 without one.
+	[IO.File]::WriteAllText($credentials, ($saved | ConvertTo-Json) + "`n", (New-Object Text.UTF8Encoding $false))
 	$apiKey = $null
 	Write-Host ""
 	Write-Ok "Valid API key to upload images!"

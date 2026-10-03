@@ -18,7 +18,7 @@ const source = vide.source
 const effect = vide.effect
 const cleanup = vide.cleanup
 
-const HEADER_HEIGHT = 42
+const HEADER_HEIGHT = 56
 const FOOTER_HEIGHT = 62
 
 export type Props = {
@@ -33,13 +33,21 @@ const function App(props: Props): Frame
 
 	const page = source("render" :: "render" | "settings")
 	const rootSize = source(Vector2.new(720, 860))
-	const selectionCount = source(0)
-
-	const function countSelection()
-		selectionCount(#Serializer.getRoots(Selection:Get()))
+	local selectionToken = 0
+	const function importSelection()
+		selectionToken += 1
+		const token = selectionToken
+		task.delay(0.15, function()
+			if token == selectionToken then
+				store.useSelection(Serializer.getRoots(Selection:Get()))
+			end
+		end)
 	end
-	cleanup(Selection.SelectionChanged:Connect(countSelection))
-	countSelection()
+	cleanup(Selection.SelectionChanged:Connect(importSelection))
+	cleanup(function()
+		selectionToken += 1
+	end)
+	importSelection()
 
 	-- the overlay must exist before any component that places hover text or popups in it.
 	const overlay = new("Frame")({
@@ -79,7 +87,7 @@ const function App(props: Props): Frame
 					if not bridge.connected() then
 						return "Bridge offline"
 					end
-					return `Bridge connected · Blender {string.match(bridge.blender() or "", "^[%d%.]+") or "?"}`
+					return `Blender {string.match(bridge.blender() or "", "^[%d%.]+") or "?"}`
 				end,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextTruncate = Enum.TextTruncate.AtEnd,
@@ -87,21 +95,6 @@ const function App(props: Props): Frame
 				Font = Enum.Font.SourceSans,
 				TextSize = 15,
 			}),
-		}),
-		Button({
-			text = function()
-				return `Use selection ({selectionCount()})`
-			end,
-			size = UDim2.fromOffset(140, 28),
-			position = UDim2.new(1, -10, 0.5, 0),
-			anchorPoint = Vector2.new(1, 0.5),
-			enabled = function()
-				return selectionCount() > 0
-			end,
-			activated = function()
-				page("render")
-				store.useSelection(Serializer.getRoots(Selection:Get()))
-			end,
 		}),
 	}) :: Frame
 
@@ -202,15 +195,15 @@ const function App(props: Props): Frame
 	const tabs = new("Frame")({
 		Name = "Tabs",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 6),
-		Size = UDim2.new(0, 200, 1, -6),
+		Position = UDim2.new(0.5, 0, 0, 12),
+		Size = UDim2.fromOffset(208, 32),
 		BackgroundTransparency = 1,
 		Parent = header,
 
 		new("UIListLayout")({
 			FillDirection = Enum.FillDirection.Horizontal,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 4),
+			Padding = UDim.new(0, 8),
 		}),
 	})
 	const renderTab = TabButton(tabs, "Render", function()
@@ -258,7 +251,7 @@ const function App(props: Props): Frame
 			end,
 			variant = "accent",
 			position = UDim2.fromOffset(10, 24),
-			size = UDim2.new(0.62, -15, 0, 30),
+			size = UDim2.new(0.62, -18, 0, 30),
 			enabled = function()
 				return bridge.connected() and #store.models() > 0 and store.busy() == nil
 			end,
@@ -267,10 +260,10 @@ const function App(props: Props): Frame
 			end,
 		}),
 		Button({
-			text = "Open folder",
+			text = "Open Folder",
 			anchorPoint = Vector2.new(1, 0),
 			position = UDim2.new(1, -10, 0, 24),
-			size = UDim2.new(0.38, -5, 0, 30),
+			size = UDim2.new(0.38, -14, 0, 30),
 			enabled = bridge.connected,
 			activated = store.openFolder,
 		}),

@@ -161,7 +161,7 @@ const function Preview(props: Props): Frame
 		end
 		const model = props.currentModel()
 		if model == nil then
-			return "Select models in Studio, then click Use selection."
+			return "Select models in Studio to add them."
 		end
 		if model.state() == "serializing" then
 			return "Reading model…"
@@ -186,6 +186,7 @@ const function Preview(props: Props): Frame
 
 	return new("Frame")({
 		Name = "Preview",
+		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Theme.DARKER,
 		BorderSizePixel = 0,
 

@@ -15,7 +15,7 @@ set -euo pipefail
 main() {
 	local repo="twistedsignal/prism"
 	local credentials_url="https://create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab"
-	local raven_tarball="https://github.com/twistedsignal/raven/archive/refs/heads/main.tar.gz"
+	local raven_tarball="https://github.com/twistedsignal/raven/archive/refs/tags/v0.3.0.tar.gz"
 	local port=47821
 
 	if [[ -t 1 ]]; then
@@ -224,19 +224,20 @@ main() {
 	if [[ -z "$raven" && -x "$HOME/.local/bin/raven" ]]; then
 		raven="$HOME/.local/bin/raven"
 	fi
-	if [[ -z "$raven" ]]; then
+	if [[ -z "$raven" ]] || ! "$raven" asset download --help 2>/dev/null | grep -- "--output" >/dev/null; then
 		echo
-		printf '%sYou do not have Raven installed! Installing...%s\n' "$yellow" "$reset"
+		printf '%sInstalling Raven v0.3.0 asset download support...%s\n' "$yellow" "$reset"
 		if ! npm install -g "$raven_tarball" >/dev/null 2>&1; then
 			# System Node installs often need root for -g; fall back to a user prefix.
 			npm install -g --prefix "$HOME/.local" "$raven_tarball" >/dev/null ||
 				fail "Could not install Raven with npm."
 		fi
 		raven="$(command -v raven 2>/dev/null || true)"
-		if [[ -z "$raven" && -x "$HOME/.local/bin/raven" ]]; then
+		if [[ -x "$HOME/.local/bin/raven" ]] && "$HOME/.local/bin/raven" asset download --help 2>/dev/null | grep -- "--output" >/dev/null; then
 			raven="$HOME/.local/bin/raven"
 		fi
 		[[ -n "$raven" ]] || fail "Raven was installed but couldn't be found. Make sure npm's global bin folder is on your PATH."
+		"$raven" asset download --help 2>/dev/null | grep -- "--output" >/dev/null || fail "Raven asset download support is still unavailable. Check your npm installation."
 		echo
 		ok "Raven has been installed."
 	fi
@@ -272,8 +273,10 @@ else:
         elif isinstance(scope, dict):
             for operation in scope.get("operations") or []:
                 granted.add((str(scope.get("name", "")).lower(), str(operation).lower()))
-    if not ({("asset", "write"), ("assets", "write")} & granted):
-        out("error", "That key is missing the Assets API with Write access. Edit the key and add it.")
+    if not all(({("asset", operation), ("assets", operation)} & granted) for operation in ("read", "write")):
+        out("error", "That key needs Assets Read and Write access. Edit the key and add them.")
+    elif ("legacy-asset", "manage") not in granted:
+        out("error", "That key needs Legacy Assets Manage access. Edit the existing key and add it.")
     else:
         out("ok", str(info.get("name") or ""), str(info.get("authorizedUserId") or ""))
 '
@@ -315,11 +318,15 @@ try:
 except Exception:
     existing = {}
 features = existing.get("features") if isinstance(existing.get("features"), list) else []
-if "asset" not in features:
-    features.append("asset")
+for feature in ("asset", "asset-download"):
+    if feature not in features:
+        features.append(feature)
 os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
 data = {"apiKey": key, "name": name or None, "ownerId": owner or None, "features": features,
         "savedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}
+# Older Raven logins without a feature list enable all commands.
+if existing.get("apiKey") and not isinstance(existing.get("features"), list):
+    data.pop("features", None)
 data = {k: v for k, v in data.items() if v is not None}
 descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
@@ -351,6 +358,8 @@ print(("PRISM:" if "bpy" in sys.modules else "") + key)
 				if [[ ! "$answer" =~ ^[Nn] ]]; then
 					api_key="$existing_key"
 				fi
+			else
+				printf "%s\n" "${result#*$'\t'}"
 			fi
 		fi
 	fi
@@ -370,7 +379,8 @@ print(("PRISM:" if "bpy" in sys.modules else "") + key)
 		echo "  1. Click Create API Key and give it a name, like Prism."
 		echo "  2. Under Access Permissions, add the API System ${bold}Assets${reset}."
 		echo "  3. Give it ${bold}Read${reset} and ${bold}Write${reset}."
-		echo "  4. Click Save & Generate Key, then copy the key."
+		echo "  4. Add Legacy Assets with Manage access."
+		echo "  5. Save the key, then copy it. Existing users can edit their current key."
 		printf '  %sA personal key can upload to any group you have access to.%s\n' "$dim" "$reset"
 		echo
 		ask "Press enter when done." >/dev/null
@@ -386,12 +396,12 @@ print(("PRISM:" if "bpy" in sys.modules else "") + key)
 			fi
 			printf '%s%s%s\n' "$red" "${result#*$'\t'}" "$reset"
 		done
-		if have_python; then
-			printf '%s' "$api_key" | python3 -c "$save_code" "$credentials" "$key_name" "$owner_id"
-		else
-			printf '%s' "$api_key" | PRISM_CREDENTIALS="$credentials" PRISM_KEY_NAME="$key_name" PRISM_OWNER="$owner_id" \
-				"${blender[@]}" --background --factory-startup --python-expr "$save_code" >/dev/null 2>&1
-		fi
+	fi
+	if have_python; then
+		printf '%s' "$api_key" | python3 -c "$save_code" "$credentials" "$key_name" "$owner_id"
+	else
+		printf '%s' "$api_key" | PRISM_CREDENTIALS="$credentials" PRISM_KEY_NAME="$key_name" PRISM_OWNER="$owner_id" \
+			"${blender[@]}" --background --factory-startup --python-expr "$save_code" >/dev/null 2>&1
 	fi
 	api_key=""
 	echo

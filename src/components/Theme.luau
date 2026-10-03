@@ -25,8 +25,8 @@ const Theme = {
 	GREEN = Color3.fromRGB(72, 199, 116),
 	RED = Color3.fromRGB(230, 72, 72),
 	YELLOW = Color3.fromRGB(240, 190, 70),
-	ROW_HEIGHT = 30,
-	SECTION_HEIGHT = 26,
+	ROW_HEIGHT = 34,
+	SECTION_HEIGHT = 30,
 	DROPDOWN_ROW_HEIGHT = 27,
 	OVERLAY_Z = 50,
 }

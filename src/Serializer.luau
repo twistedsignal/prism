@@ -1,16 +1,14 @@
 -- turns selected instances into the backend's scene payload.
--- meshes and textures are read through EditableMesh/EditableImage.
+-- prefer editable content, then send asset references for backend recovery.
 const AssetService = game:GetService("AssetService")
 const Base64 = require("./Base64")
 
 const YIELD_EVERY = 3000
--- roblox only lets plugins read meshes and images owned by you or this experience's owner.
-const PERMISSION_MESH_WARNING =
-	"Some meshes are drawn as boxes: Roblox only lets plugins read meshes owned by you or this game's owner."
-const PERMISSION_TEXTURE_WARNING =
-	"Some textures were skipped: Roblox only lets plugins read images owned by you or this game's owner."
+const PERMISSION_MESH_WARNING = "Mesh has no readable geometry or downloadable asset ID; using a box"
+const PERMISSION_TEXTURE_WARNING = "Texture has no readable pixels or downloadable asset ID; using part color"
 
 export type Payload = {
+	warnings: { string }?,
 	name: string,
 	parts: { { [string]: any } },
 	textures: { [string]: { width: number, height: number, pixels: string } },
@@ -121,6 +119,15 @@ const function contentKey(content: Content): string
 	return tostring(content.Object)
 end
 
+const function assetId(content: Content?): string?
+	if content == nil or content.SourceType ~= Enum.ContentSourceType.Uri then
+		return nil
+	end
+	const uri = content.Uri :: string
+	const id = string.match(uri, "^rbxassetid://(%d+)$") or string.match(uri, "[?&][Ii][Dd]=(%d+)")
+	return if id and tonumber(id) and tonumber(id) > 0 then id else nil
+end
+
 const function writeVector(target: buffer, offset: number, value: Vector3)
 	buffer.writef32(target, offset, value.X)
 	buffer.writef32(target, offset + 4, value.Y)
@@ -186,6 +193,21 @@ const function loadMesh(content: Content?): (EditableMesh?, boolean)
 	return if ok then mesh else nil, ok
 end
 
+const function meshData(content: Content?): { [string]: any }?
+	const mesh, owned = loadMesh(content)
+	if mesh then
+		const ok, data = pcall(readEditableMesh, mesh)
+		if owned then
+			mesh:Destroy()
+		end
+		if ok then
+			return data
+		end
+	end
+	const id = assetId(content)
+	return if id then { assetId = id } else nil
+end
+
 const function loadImage(content: Content): ({ width: number, height: number, pixels: string }?, string?)
 	local image: EditableImage? = nil
 	local owned = false
@@ -208,9 +230,14 @@ const function loadImage(content: Content): ({ width: number, height: number, pi
 		return nil, "unsupported texture"
 	end
 	const size = image.Size
-	const pixels = image:ReadPixelsBuffer(Vector2.zero, size)
+	const ok, pixels = pcall(function()
+		return image:ReadPixelsBuffer(Vector2.zero, size)
+	end)
 	if owned then
 		image:Destroy()
+	end
+	if not ok then
+		return nil, tostring(pixels)
 	end
 	return { width = size.X, height = size.Y, pixels = Base64.encode(pixels) }, nil
 end
@@ -232,13 +259,17 @@ const function addTexture(context: Context, content: Content?, mode: string): { 
 		return nil
 	end
 	const key = contentKey(content)
+	const id = assetId(content)
 	if context.failedTextures[key] then
-		return nil
+		return if id then { id = key, assetId = id, mode = mode } :: any else nil
 	end
 	if context.textures[key] == nil then
 		const texture, problem = loadImage(content)
 		if texture == nil then
 			context.failedTextures[key] = true
+			if id then
+				return { id = key, assetId = id, mode = mode } :: any
+			end
 			if problem == "no permission" then
 				warnOnce(context, PERMISSION_TEXTURE_WARNING)
 			else
@@ -273,12 +304,8 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 
 	const specialMesh = part:FindFirstChildWhichIsA("SpecialMesh")
 	if part:IsA("MeshPart") then
-		const mesh, owned = loadMesh(contentOf(part, "MeshContent", "MeshId"))
-		if mesh then
-			const data = readEditableMesh(mesh)
-			if owned then
-				mesh:Destroy()
-			end
+		const data = meshData(contentOf(part, "MeshContent", "MeshId"))
+		if data then
 			const meshSize = part.MeshSize
 			data.scale = {
 				if meshSize.X > 0 then part.Size.X / meshSize.X else 1,
@@ -288,22 +315,18 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 			data.center = true
 			entry.kind = "mesh"
 			entry.mesh = data
-			entry.texture = surfaceTexture(context, part)
-				or addTexture(context, contentOf(part, "TextureContent", "TextureID"), "overlay")
 		else
 			entry.kind = "block"
 			entry.warning = PERMISSION_MESH_WARNING
 		end
+		entry.texture = surfaceTexture(context, part)
+			or addTexture(context, contentOf(part, "TextureContent", "TextureID"), "overlay")
 	elseif specialMesh then
 		const meshType = specialMesh.MeshType
 		const scale = specialMesh.Scale
 		if meshType == Enum.MeshType.FileMesh then
-			const mesh, owned = loadMesh(contentOf(specialMesh, "MeshContent", "MeshId"))
-			if mesh then
-				const data = readEditableMesh(mesh)
-				if owned then
-					mesh:Destroy()
-				end
+			const data = meshData(contentOf(specialMesh, "MeshContent", "MeshId"))
+			if data then
 				data.scale = { scale.X, scale.Y, scale.Z }
 				data.offset = { specialMesh.Offset.X, specialMesh.Offset.Y, specialMesh.Offset.Z }
 				data.center = false

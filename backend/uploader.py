@@ -3,7 +3,6 @@
 import json
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -28,7 +27,7 @@ def find_raven(configured=""):
         if appdata:
             candidates.append(Path(appdata) / "npm" / "raven.cmd")
     else:
-        candidates += [Path.home() / ".npm-global" / "bin" / "raven", Path("/usr/local/bin/raven"),
+        candidates += [Path.home() / ".local" / "bin" / "raven", Path.home() / ".npm-global" / "bin" / "raven", Path("/usr/local/bin/raven"),
                        Path("/opt/homebrew/bin/raven")]
     for candidate in candidates:
         if candidate.is_file():
@@ -44,20 +43,16 @@ def upload(path, name, creator, raven_path=""):
     if raven is None:
         raise UploadError("raven was not found. Re-run the Prism installer or set its path in Settings.")
 
-    env = dict(os.environ)
-    # Services don't inherit shell PATHs; raven's node usually lives next to it.
-    env["PATH"] = os.pathsep.join([str(Path(raven).parent), env.get("PATH", "")])
-    env["NO_COLOR"] = "1"
+    from assets import AssetError, run_raven
+
     try:
-        result = subprocess.run(
-            [raven, "--json", "asset", "upload", "--path", str(path), "--creator", creator,
-             "--name", name[:50] or "Prism icon", "--description", "Rendered with Prism"],
-            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=UPLOAD_TIMEOUT, env=env,
+        result = run_raven(
+            raven, ["--json", "asset", "upload", "--path", str(path), "--creator", creator,
+                    "--name", name[:50] or "Prism icon", "--description", "Rendered with Prism"],
+            timeout=UPLOAD_TIMEOUT,
         )
-    except subprocess.TimeoutExpired as error:
-        raise UploadError("raven timed out waiting for Roblox") from error
-    except OSError as error:
-        raise UploadError(f"Could not run raven: {error}") from error
+    except AssetError as error:
+        raise UploadError(str(error)) from error
 
     if result.returncode != 0:
         message = (result.stderr or result.stdout).strip().lstrip("✖").strip()

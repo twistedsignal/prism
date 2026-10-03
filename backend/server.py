@@ -12,7 +12,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import bpy
-
 import config
 import platform_open
 import renderer
@@ -21,6 +20,8 @@ import updater
 import uploader
 from jobs import JobQueue, Superseded
 from scene import SceneCache, SceneError
+
+import assets
 
 MAX_BODY = 512 * 1024 * 1024
 RENDER_TIMEOUT = 600
@@ -45,7 +46,9 @@ class Bridge:
     def __init__(self, store):
         self.store = store
         self.jobs = JobQueue()
-        self.scenes = SceneCache(config.cache_dir())
+        self.scenes = SceneCache(config.cache_dir(), assets.Resolver(
+            config.cache_dir(), lambda: self.store.get_config()["ravenPath"],
+        ))
         self.renderer = None
         self.updates = updater.Checker()
         self.updating = threading.Lock()
@@ -222,8 +225,8 @@ def make_handler(bridge):
         def post_scene(self):
             raw = self.read_body()
             payload = self.read_json(raw)
-            identifier, warnings = bridge.scenes.add(raw, payload)
-            return 200, {"sceneId": identifier, "warnings": warnings}
+            identifier, warnings = bridge.jobs.submit(lambda: bridge.scenes.add(raw, payload), timeout=RENDER_TIMEOUT)
+            return 200, {"sceneId": identifier, "warnings": warnings, "incomplete": bridge.scenes.incomplete(identifier)}
 
         def preview(self):
             body = self.read_json()
@@ -340,6 +343,13 @@ def bind(bridge, port, attempts=30):
 
 
 def serve(store, port):
+    # A v0.2 updater cannot run the new migration before swapping its backend.
+    # Run it on first v0.3 startup too, before accepting scene requests.
+    try:
+        raven_path = assets.ensure_raven(store.get_config()["ravenPath"])
+        store.update_config({"ravenPath": raven_path})
+    except assets.AssetError as error:
+        print(f"[prism] Asset recovery setup: {error}", flush=True)
     bridge = Bridge(store)
     httpd = bind(bridge, port)
     httpd.daemon_threads = True

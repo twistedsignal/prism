@@ -256,7 +256,7 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 
 		new("UIListLayout")({
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 0),
+			Padding = UDim.new(0, 8),
 		}),
 	}) :: Frame
 
@@ -361,7 +361,7 @@ const function RenderPage(props: Props): Frame
 	end
 	const previewHeight = function(): number
 		const size = leftSize()
-		return math.clamp(size.X, 160, math.max(160, size.Y - 190))
+		return math.clamp(size.X, 160, math.max(160, size.Y - 204))
 	end
 
 	const function upload(models: { Types.Model })
@@ -410,9 +410,9 @@ const function RenderPage(props: Props): Frame
 		new("Frame")({
 			Name = "UploadRow",
 			Position = function()
-				return UDim2.fromOffset(0, previewHeight() + 8)
+				return UDim2.fromOffset(0, previewHeight() + 12)
 			end,
-			Size = UDim2.new(1, 0, 0, 28),
+			Size = UDim2.new(1, 0, 0, 72),
 			BackgroundTransparency = 1,
 
 			Dropdown({
@@ -429,16 +429,14 @@ const function RenderPage(props: Props): Frame
 				end,
 				onSelect = selectedTarget,
 				emptyText = "Set a default creator in Settings",
-				size = UDim2.new(1, -196, 1, 0),
+				size = UDim2.new(1, 0, 0, 32),
 			}),
 			Button({
 				text = function()
 					return if store.busy() == "Uploading" then "Uploading…" else "Upload"
 				end,
-				variant = "accent",
-				size = UDim2.fromOffset(88, 28),
-				position = UDim2.new(1, -102, 0, 0),
-				anchorPoint = Vector2.new(1, 0),
+				size = UDim2.new(0.5, -4, 0, 32),
+				position = UDim2.fromOffset(0, 40),
 				enabled = function()
 					return props.connected() and store.currentModel() ~= nil and store.busy() == nil
 				end,
@@ -451,11 +449,11 @@ const function RenderPage(props: Props): Frame
 			}),
 			Button({
 				text = function()
-					return `Upload all {modelCount()}`
+					return `Upload All ({modelCount()})`
 				end,
 				variant = "accent",
-				size = UDim2.fromOffset(96, 28),
-				position = UDim2.fromScale(1, 0),
+				size = UDim2.new(0.5, -4, 0, 32),
+				position = UDim2.new(1, 0, 0, 40),
 				anchorPoint = Vector2.new(1, 0),
 				enabled = function()
 					return props.connected() and modelCount() > 0 and store.busy() == nil
@@ -466,29 +464,13 @@ const function RenderPage(props: Props): Frame
 			}),
 		}),
 
-		label({
-			text = function()
-				const count = modelCount()
-				if count == 0 then
-					return "No models yet · select some in Studio and click Use selection"
-				end
-				return `{count} model{if count == 1 then "" else "s"} · click a card to edit it`
-			end,
-			size = UDim2.new(1, 0, 0, 20),
-			position = function()
-				return UDim2.fromOffset(0, previewHeight() + 40)
-			end,
-			textSize = 14,
-			color = Theme.SUBTLE,
-		}),
-
 		new("ScrollingFrame")({
 			Name = "Cards",
 			Position = function()
-				return UDim2.fromOffset(0, previewHeight() + 62)
+				return UDim2.fromOffset(0, previewHeight() + 92)
 			end,
 			Size = function()
-				return UDim2.new(1, 0, 1, -(previewHeight() + 62))
+				return UDim2.new(1, 0, 1, -(previewHeight() + 92))
 			end,
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
@@ -547,7 +529,7 @@ const function RenderPage(props: Props): Frame
 			options = {
 				"This model",
 				function()
-					return `All {modelCount()}`
+					return `All ({modelCount()})`
 				end,
 			},
 			selected = function()

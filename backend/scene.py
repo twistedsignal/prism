@@ -24,10 +24,12 @@ Payload (all coordinates are Roblox studs, Y up, relative to the model pivot):
 
 import base64
 import hashlib
+import json
 import math
 import shutil
 import struct
 import sys
+import uuid
 import zlib
 from array import array
 from pathlib import Path
@@ -418,7 +420,8 @@ def build(payload, directory):
 class SceneCache:
     """Stores built scenes by content hash under the cache directory."""
 
-    def __init__(self, root):
+    def __init__(self, root, resolver=None):
+        self.resolver = resolver
         self.root = Path(root) / "scenes"
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -434,20 +437,51 @@ class SceneCache:
             return False
 
     def add(self, body, payload):
-        identifier = scene_id(body)
+        if not isinstance(payload, dict) or not isinstance(payload.get("parts"), list):
+            raise SceneError("Scene parts must be an array")
+        if payload.get("textures") and not isinstance(payload["textures"], dict):
+            raise SceneError("Scene textures must be an object")
+        for part in payload["parts"]:
+            if not isinstance(part, dict):
+                raise SceneError("Part must be an object")
+            for key in ("mesh", "texture"):
+                entry = part.get(key)
+                if entry is not None and not isinstance(entry, dict):
+                    raise SceneError(f"Part {key} must be an object")
+                if entry and "assetId" in entry:
+                    import assets
+                    try:
+                        assets.asset_id(entry["assetId"])
+                    except assets.AssetError as error:
+                        raise SceneError(str(error)) from error
+        recovery_warnings, incomplete = [], False
+        if self.resolver:
+            payload, recovery_warnings, incomplete = self.resolver.resolve(payload)
+        # Resolved bytes change the ID after credential repair, invalidating renderer objects.
+        resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        identifier = scene_id(b"resolver-v1:" + resolved)
+        if incomplete:
+            identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier
         if (directory / "model.obj").exists():
             (directory / "model.obj").touch()
-            return identifier, []
+            manifest = directory / "warnings.json"
+            return identifier, json.loads(manifest.read_text()) if manifest.exists() else []
         staging = self.root / f".{identifier}.tmp"
         shutil.rmtree(staging, ignore_errors=True)
         try:
-            warnings = build(payload, staging)
+            warnings = list(dict.fromkeys(recovery_warnings + payload.get("warnings", []) + build(payload, staging)))
+            (staging / "warnings.json").write_text(json.dumps(warnings), encoding="utf-8")
+            (staging / "incomplete").write_text("1" if incomplete else "0", encoding="utf-8")
             staging.replace(directory)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
         self.prune()
         return identifier, warnings
+
+    def incomplete(self, identifier):
+        marker = self.path(identifier).parent / "incomplete"
+        return marker.exists() and marker.read_text() == "1"
 
     def prune(self):
         scenes = sorted(

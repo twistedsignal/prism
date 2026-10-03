@@ -68,6 +68,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 
 	local previewImage: EditableImage? = nil
 	const payloads: { [string]: string } = {}
+	const recoveryNeeded: { [string]: boolean } = {}
 	local destroyed = false
 
 	-- ---------------------------------------------------------------
@@ -145,6 +146,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 			return false
 		end
 		model.sceneId(response.body.sceneId)
+		recoveryNeeded[model.id] = response.body.incomplete == true
+		const warnings = response.body.warnings or {}
+		model.warning(if #warnings > 0 then table.concat(warnings, "\n") else nil)
 		model.state("ready")
 		return true
 	end
@@ -257,6 +261,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const function destroyModels(list: { Types.Model })
 		for _, model in list do
 			payloads[model.id] = nil
+			recoveryNeeded[model.id] = nil
 			if model.thumbnail then
 				model.thumbnail:Destroy()
 				model.thumbnail = nil
@@ -265,15 +270,31 @@ const function create(plugin: Plugin, bridge: Bridge)
 	end
 
 	const function useSelection(roots: { Instance })
-		if #roots == 0 then
-			setNotice("Select a model, tool, accessory or part first.", "info")
+		if destroyed or #roots == 0 then
 			return
 		end
-		destroyModels(models())
 		const initial = defaults()
-		const list: { Types.Model } = {}
+		const list = table.clone(models())
+		const added: { Types.Model } = {}
+		const retry: { Types.Model } = {}
+		local firstSelected: number? = nil
 		for _, root in roots do
-			table.insert(list, {
+			local existing: number? = nil
+			for index, model in list do
+				if model.instance == root then
+					existing = index
+					break
+				end
+			end
+			if existing then
+				firstSelected = firstSelected or existing
+				const model = list[existing]
+				if recoveryNeeded[model.id] and not table.find(retry, model) then
+					table.insert(retry, model)
+				end
+				continue
+			end
+			const model: Types.Model = {
 				id = HttpService:GenerateGUID(false),
 				name = root.Name,
 				instance = root,
@@ -284,18 +305,40 @@ const function create(plugin: Plugin, bridge: Bridge)
 				assetId = source(nil :: string?),
 				thumbnail = nil,
 				thumbnailVersion = source(0),
-			})
+			}
+			table.insert(list, model)
+			table.insert(added, model)
+			firstSelected = firstSelected or #list
 		end
-		models(list)
-		selected(1)
-		activePreset(nil)
+		if #added > 0 then
+			models(list)
+		end
+		if firstSelected and firstSelected ~= selected() then
+			selected(firstSelected)
+			activePreset(nil)
+			requestPreview()
+		end
+		if #added == 0 and #retry == 0 then
+			return
+		end
 
 		task.spawn(function()
-			for _, model in list do
-				if destroyed or models() ~= list then
+			for _, model in retry do
+				if not destroyed and bridge.connected() and sendScene(model) then
+					if model == currentModel() then
+						requestPreview()
+					end
+					queueThumbnail(model)
+				end
+			end
+			for _, model in added do
+				if destroyed or not table.find(models(), model) then
 					return
 				end
 				const ok, result = pcall(Serializer.serialize, model.instance)
+				if destroyed or not table.find(models(), model) then
+					return
+				end
 				if not ok then
 					model.state("error")
 					model.warning(`Could not read {model.name}: {result}`)
@@ -306,6 +349,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 					model.warning(`{model.name} has no visible parts`)
 					continue
 				end
+				result.payload.warnings = result.warnings
 				payloads[model.id] = HttpService:JSONEncode(result.payload)
 				if #result.warnings > 0 then
 					model.warning(table.concat(result.warnings, "\n"))

@@ -27,7 +27,6 @@ const function BaseSetting(props: Props): Frame
 		ClipsDescendants = true,
 		Parent = props.parent,
 
-		Theme.stroke(Theme.BORDER),
 		new("TextLabel")({
 			Name = "Label",
 			Size = UDim2.fromScale(props.labelWidth or 0.5, 1),

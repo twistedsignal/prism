@@ -204,6 +204,17 @@ def install(version):
             shutil.rmtree(cache, ignore_errors=True)
         (new_backend / "VERSION").write_text(f"{version}\n", encoding="utf-8")
 
+        # Upgrade the CLI before replacing Prism, preserving a working install on failure.
+        import config
+
+        import assets
+        try:
+            settings_store = config.Store()
+            raven_path = assets.ensure_raven(settings_store.get_config()["ravenPath"])
+            settings_store.update_config({"ravenPath": raven_path})
+        except assets.AssetError as error:
+            raise UpdateError(str(error)) from error
+
         # Swap directories so a failed copy never leaves a half-updated backend.
         current = backend_dir()
         previous = root / ".backend-previous"
