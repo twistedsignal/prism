@@ -56,12 +56,12 @@ class Bridge:
 
     # ---- serialized worker jobs -----------------------------------------
 
-    def render(self, scene_id, settings, size, aa, format="rgba", text_bounds=False, emoji_provider=None):
+    def render(self, scene_id, settings, size, aa, format="rgba", text_bounds=False, emoji_provider=None, progress_callback=None):
         if not self.scenes.exists(scene_id):
             raise HttpError(404, "Unknown scene; send it again")
         settings = schema.normalize(settings)
         settings["textEmojiProvider"] = emoji_provider or self.store.get_config()["emojiProvider"]
-        return self.worker.render(scene_id, settings, size, aa, format, text_bounds=text_bounds)
+        return self.worker.render(scene_id, settings, size, aa, format, text_bounds=text_bounds, progress_callback=progress_callback)
 
     def output_path(self, folder, name, index, overwrite, pattern):
         stem = safe_filename(pattern.replace("{name}", safe_filename(name)).replace("{index}", str(index)))
@@ -216,6 +216,7 @@ def make_handler(bridge):
                 "blender": bridge.worker.version,
                 "workerRunning": process is not None and process.poll() is None,
                 "busy": bridge.jobs.busy,
+                "renderProgress": bridge.worker.progress_status(),
                 "platform": sys.platform,
                 "agentApiVersion": agent.API_VERSION,
                 "agentSessions": len(bridge.agent.session_list()),

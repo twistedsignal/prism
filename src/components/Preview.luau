@@ -35,6 +35,7 @@ export type Props = {
 	beginTextDrag: () -> (),
 	endTextDrag: () -> (),
 	busy: () -> string?,
+	renderProgress: (() -> Types.RenderProgress?)?,
 }
 
 -- world-aligned bounds of every part in an instance.
@@ -196,6 +197,13 @@ const function Preview(props: Props): Frame
 		end
 		if model.state() == "sending" then
 			return "Downloading model..."
+		end
+		if props.busy() == "Rendering" or props.previewState() == "rendering" or props.busy() == "Uploading" then
+			const progress = if props.renderProgress then props.renderProgress() else nil
+			if progress and progress.elapsedSeconds >= 3 then
+				const count = if progress.total then ` ({progress.completed}/{progress.total} steps)` else ""
+				return `{progress.stage}\n{string.sub(count, 2)} · {math.floor(progress.elapsedSeconds)}s`
+			end
 		end
 		if props.busy() == "Rendering" or props.previewState() == "rendering" then
 			return "Rendering..."
@@ -441,7 +449,10 @@ const function Preview(props: Props): Frame
 				Name = "Activity",
 				AnchorPoint = Vector2.new(0, 1),
 				Position = UDim2.new(0, 2, 1, -4),
-				Size = UDim2.fromOffset(168, 26),
+				Size = function()
+					const progress = if props.renderProgress then props.renderProgress() else nil
+					return if progress and progress.elapsedSeconds >= 3 then UDim2.new(1, -4, 0, 44) else UDim2.fromOffset(168, 26)
+				end,
 				BackgroundColor3 = Theme.DARKER,
 				BackgroundTransparency = 0.15,
 				BorderSizePixel = 0,
@@ -456,6 +467,7 @@ const function Preview(props: Props): Frame
 					Size = UDim2.new(1, -38, 1, 0),
 					BackgroundTransparency = 1,
 					Text = activity,
+					TextWrapped = true,
 					TextXAlignment = Enum.TextXAlignment.Left,
 					TextColor3 = Theme.MUTED,
 					Font = Enum.Font.SourceSans,

@@ -7,6 +7,7 @@ local function load(path, environment)
 end
 local camera = load('src/CameraControls.luau')
 local settings = { cameraRotation = 20, cameraElevation = 15, zoom = 1, textOffsetX = 0, textOffsetY = 0 }
+local progress
 local phase, previewPhase, busy, connected = "ready", "idle", nil, true
 local model = { state = function() return phase end, name = 'Test', settings = function() return settings end }
 local controls, move, onEnd, initiatingPress, activity, activityText, spinnerVisible
@@ -60,6 +61,7 @@ Preview({
     connected = function() return connected end,
     previewState = function() return previewPhase end,
     busy = function() return busy end,
+    renderProgress = function() return progress end,
     auto3d = function() return automatic end,
     currentModel = function() return model end, view = function() return 'blender' end,
     previewVersion = function() return 1 end, previewImage = function() return image end,
@@ -127,7 +129,15 @@ previewPhase = "idle"
 assert(not activity.Visible(), "Finished render left the indicator visible")
 busy = "Rendering"
 assert(activityText.Text() == "Rendering...")
+progress = { stage = "Rendering base image", completed = 2, total = 5, elapsedSeconds = 2.9 }
+assert(activityText.Text() == "Rendering...", "Fast renders should keep the simple label")
+progress.elapsedSeconds = 6.5
+assert(activityText.Text() == "Rendering base image\n(2/5 steps) · 6s", "Slow renders should show counts and elapsed time")
+previewPhase = "idle"
+busy = nil
+assert(not activity.Visible(), "Stale progress must not keep the indicator visible")
 busy = "Uploading"
+progress = nil
 assert(activityText.Text() == "Uploading...")
 busy = nil
 phase = "error"

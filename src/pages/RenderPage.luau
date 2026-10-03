@@ -595,6 +595,7 @@ const function RenderPage(props: Props): Frame
 				endTextDrag = store.endTextDrag,
 				fonts = store.fonts,
 				busy = store.busy,
+				renderProgress = store.renderProgress,
 				connected = props.connected,
 			}),
 		}),

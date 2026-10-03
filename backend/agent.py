@@ -217,10 +217,15 @@ class Broker:
                 payload = snapshot.get("payload")
                 if not isinstance(payload, dict) or not payload.get("parts"):
                     raise AgentError("Target has no visible parts")
+                def report_progress(progress):
+                    with self.lock:
+                        job["progress"] = dict(progress, itemIndex=index, itemTotal=len(job["items"]))
+                        job["_progressStarted"] = time.monotonic() - progress["elapsedSeconds"]
                 def render_item():
+                    report_progress({"stage": "Preparing scene", "completed": 0, "total": None, "elapsedSeconds": 0})
                     scene = self.bridge.worker.add_scene(json.dumps(payload).encode())
                     png = self.bridge.render(scene["sceneId"], item["settings"], item["size"], item["aa"], "png",
-                                             emoji_provider=item["emojiProvider"])
+                                             emoji_provider=item["emojiProvider"], progress_callback=report_progress)
                     return png, scene.get("warnings", [])
                 png, warnings = self.bridge.jobs.submit(render_item, timeout=600)
                 path = Path(item["output"])
@@ -233,6 +238,7 @@ class Broker:
                     cfg = self.bridge.store.get_config()
                     if self.closed:
                         raise AgentError("Backend stopped before upload")
+                    report_progress({"stage": "Uploading to Roblox", "completed": 0, "total": None, "elapsedSeconds": 0})
                     result["uploadStarted"] = True
                     result.update(uploader.upload(path, result["name"], item["creator"], cfg["ravenPath"]))
                     resolver = assets.Resolver(config.cache_dir(), lambda: cfg["ravenPath"])
@@ -246,10 +252,14 @@ class Broker:
             failures = sum("error" in result for result in results)
             job["status"] = "failed" if failures == len(results) else "partial" if failures else "completed"
             job.pop("items", None)
+            job.pop("_progressStarted", None)
 
     @staticmethod
     def public(job):
-        return copy.deepcopy({k: v for k, v in job.items() if k not in ("request", "items", "created")})
+        result = copy.deepcopy({k: v for k, v in job.items() if k not in ("request", "items", "created", "_progressStarted")})
+        if "_progressStarted" in job and "progress" in result:
+            result["progress"]["elapsedSeconds"] = round(time.monotonic() - job["_progressStarted"], 1)
+        return result
 
     def get(self, identifier):
         with self.lock:

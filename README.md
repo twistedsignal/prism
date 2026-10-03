@@ -32,6 +32,8 @@ irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1 | iex
 
 The plugin has outlines, shadows, glow, color and depth effects, and text. Presets are saved locally. Prism also remembers a model's settings when you deselect and reselect it.
 
+Slow renders show the current render step, completed/total steps, and elapsed time in the preview after three seconds. Agent jobs expose the same progress, and waiting CLI commands print updates to stderr every three seconds. These are completed render steps, not estimated Blender samples.
+
 ## Agent automation
 
 Prism installs a `prism` CLI for agents with terminal access. The Studio plugin runs its agent service in edit mode even when the panel is closed. Commands do not change your selection, panel settings, presets or saved preferences.

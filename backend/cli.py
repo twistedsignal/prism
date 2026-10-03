@@ -52,11 +52,19 @@ class Client:
 
     def wait(self, job, timeout):
         end = time.monotonic() + timeout
+        next_progress = time.monotonic() + 3
         while job["status"] not in ("completed", "partial", "failed"):
             if time.monotonic() >= end:
                 return dict(job, timedOut=True), 2
             time.sleep(min(0.5, max(0, end - time.monotonic())))
             job = self.request("GET", "/agent/v1/jobs/" + job["id"])
+            if job["status"] not in ("completed", "partial", "failed") and time.monotonic() >= next_progress:
+                progress = job.get("progress") or {}
+                count = f" ({progress['completed']}/{progress['total']} steps)" if progress.get("total") else ""
+                elapsed = f" {progress['elapsedSeconds']:.0f}s" if "elapsedSeconds" in progress else ""
+                item = f" item {progress['itemIndex']}/{progress['itemTotal']}" if "itemIndex" in progress else ""
+                print(f"Prism {job['id']}:{item} {progress.get('stage', job['status'])}{count}{elapsed}", file=sys.stderr)
+                next_progress = time.monotonic() + 3
         return job, 0 if job["status"] == "completed" else 1
 
 

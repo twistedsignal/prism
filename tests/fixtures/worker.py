@@ -25,6 +25,11 @@ with socket.create_connection(("127.0.0.1", int(port))) as connection:
                     os._exit(2)
                 if mode == "timeout":
                     time.sleep(1)
+                if mode in ("progress", "progress-timeout"):
+                    for completed in range(3):
+                        stream.write(json.dumps({"progress": {"stage": "Rendering base image", "completed": completed, "total": 3}}).encode() + b"\n")
+                        stream.flush()
+                        time.sleep(0.03)
                 extension = "png" if request["format"] == "png" else "rgba"
                 (directory / f"render.{extension}").write_bytes(b"image")
             response = {"ok": True, "result": result}

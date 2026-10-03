@@ -95,6 +95,40 @@ class AgentTests(unittest.TestCase):
         with self.assertRaisesRegex(agent.AgentError, "creator"):
             self.broker.submit({"operation": "upload", "path": "Workspace.Part"})
 
+    def test_agent_job_exposes_scoped_render_progress(self):
+        def render(*args, **kwargs):
+            kwargs["progress_callback"]({"stage": "Rendering base image", "completed": 2, "total": 5, "elapsedSeconds": 4})
+            current = self.broker.get(job["id"])
+            self.assertEqual(current["progress"]["itemIndex"], 1)
+            self.assertEqual(current["progress"]["itemTotal"], 1)
+            self.assertGreaterEqual(current["progress"]["elapsedSeconds"], 4)
+            self.assertNotIn("_progressStarted", current)
+            return b"PNG"
+        self.bridge.render = render
+        job = self.broker.submit({"path": "Workspace.Part"})
+        result = self.finish(job, [{"payload": {"parts": [{}]}}])
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["progress"]["completed"], 2)
+
+    def test_cli_progress_is_throttled_on_stderr_and_keeps_result(self):
+        import io
+        now = [0.0]
+        active = {"id": "job", "status": "processing", "progress": {
+            "stage": "Rendering base image", "completed": 2, "total": 5,
+            "elapsedSeconds": 4, "itemIndex": 1, "itemTotal": 2}}
+        client = cli.Client(49999)
+        stderr = io.StringIO()
+        def request(*args):
+            return dict(active, status="completed") if now[0] >= 7 else active
+        with patch.object(cli.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(cli.time, "sleep", side_effect=lambda seconds: now.__setitem__(0, now[0] + seconds)), \
+                patch.object(client, "request", side_effect=request), patch.object(sys, "stderr", stderr):
+            result, code = client.wait(active, 10)
+        self.assertEqual(code, 0)
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(len(stderr.getvalue().splitlines()), 2)
+        self.assertIn("item 1/2 Rendering base image (2/5 steps) 4s", stderr.getvalue())
+
     def test_cli_parsing_timeout_and_manifest(self):
         args = cli.parser().parse_args(["render", "--path", "Workspace.Part", "--size", "1024", "--settings", '{"zoom":2}'])
         self.assertEqual(args.size, 1024)

@@ -1,7 +1,10 @@
+export type RenderProgress = { stage: string, completed: number, total: number?, elapsedSeconds: number }
+
 export type Status = {
 	version: string,
 	blender: string,
 	busy: boolean,
+	renderProgress: RenderProgress?,
 	platform: string,
 }
 

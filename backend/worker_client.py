@@ -28,6 +28,8 @@ class Worker:
         self.directory = None
         self.log = None
         self.last_used = 0
+        self.progress = None
+        self.progress_started = None
         self.version = runtime.settings().get("blenderVersion", "")
 
     def start(self):
@@ -84,20 +86,41 @@ class Worker:
             self.close()
             raise
 
-    def call(self, operation, **parameters):
-        self.start()
+    def progress_status(self):
+        progress = self.progress
+        started = self.progress_started
+        if progress is None or started is None:
+            return None
+        return dict(progress, elapsedSeconds=round(time.monotonic() - started, 1))
+
+    def call(self, operation, progress_callback=None, **parameters):
+        self.progress_started = time.monotonic()
+        self.progress = {"stage": "Starting Blender", "completed": 0, "total": None}
         try:
+            self.start()
             self.stream.write(json.dumps({"operation": operation, **parameters}).encode() + b"\n")
             self.stream.flush()
-            line = self.stream.readline(1024 * 1024)
-            if not line:
-                raise RuntimeError(self.failure("Blender worker disconnected; retry the render"))
-            response = json.loads(line)
+            deadline = time.monotonic() + RENDER_TIMEOUT
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("Blender render timed out")
+                self.connection.settimeout(remaining)
+                line = self.stream.readline(1024 * 1024)
+                if not line:
+                    raise RuntimeError(self.failure("Blender worker disconnected; retry the render"))
+                response = json.loads(line)
+                if "progress" not in response:
+                    break
+                self.progress = response["progress"]
+                if progress_callback:
+                    progress_callback(self.progress_status())
         except (OSError, ValueError, RuntimeError):
             self.close()
             raise
         finally:
             self.last_used = time.monotonic()
+            self.progress = self.progress_started = None
         if not response["ok"]:
             error = SceneError if response.get("sceneError") else RuntimeError
             raise error(response["error"])
@@ -126,9 +149,9 @@ class Worker:
         finally:
             path.unlink(missing_ok=True)
 
-    def render(self, scene_id, settings, size, aa, format="rgba", text_bounds=False):
+    def render(self, scene_id, settings, size, aa, format="rgba", text_bounds=False, progress_callback=None):
         result = self.call("render", sceneId=scene_id, settings=settings, size=size, aa=aa,
-                           format=format, textBounds=text_bounds)
+                           format=format, textBounds=text_bounds, progress_callback=progress_callback)
         path = Path(self.directory.name) / ("render.png" if format == "png" else "render.rgba")
         try:
             pixels = path.read_bytes()

@@ -69,6 +69,25 @@ class WorkerTests(unittest.TestCase):
         self.assertIsNone(self.worker.process)
         self.assertEqual(self.worker.render("testscene", {}, 128, "8"), b"image")
 
+    def test_progress_frames_do_not_replace_result_and_clear_after_render(self):
+        updates = []
+        def record(progress):
+            updates.append(progress)
+            self.assertEqual(self.worker.progress_status()["completed"], progress["completed"])
+        result = self.worker.render("testscene", {"test": "progress"}, 128, "8", progress_callback=record)
+        self.assertEqual(result, b"image")
+        self.assertEqual([p["completed"] for p in updates], [0, 1, 2])
+        self.assertGreater(updates[-1]["elapsedSeconds"], 0)
+        self.assertIsNone(self.worker.progress_status())
+        self.assertEqual(self.worker.render("testscene", {}, 128, "8"), b"image")
+
+    def test_progress_does_not_extend_render_timeout(self):
+        with patch.object(worker_client, "RENDER_TIMEOUT", 0.05):
+            with self.assertRaises(TimeoutError):
+                self.worker.render("testscene", {"test": "progress-timeout"}, 128, "8")
+        self.assertIsNone(self.worker.progress_status())
+        self.assertIsNone(self.worker.process)
+
     def test_startup_failure_cleans_up(self):
         self.worker.command = [sys.executable, "-c", "raise SystemExit(2)"]
         with self.assertRaisesRegex(RuntimeError, "startup"):
@@ -340,7 +359,15 @@ class BlenderWorkerTests(unittest.TestCase):
                     "kind": "head", "size": [1, 1, 1], "color": "#F5CD30",
                     "cframe": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
                 }], "textures": {}}).encode())
-                pixels = worker.render(scene["sceneId"], {}, 128, "8")
+                progress = []
+                pixels = worker.render(scene["sceneId"], {}, 128, "8", progress_callback=progress.append)
+                stages = [p["stage"] for p in progress]
+                self.assertIn("Rendering base image", stages)
+                self.assertEqual(stages[-1], "Image ready")
+                numbered = [p for p in progress if p["total"]]
+                self.assertEqual([p["completed"] for p in numbered], list(range(6)))
+                self.assertTrue(all(p["total"] == 5 for p in numbered))
+                self.assertIsNone(worker.progress_status())
                 self.assertEqual(len(pixels), 128 * 128 * 4)
                 self.assertTrue(any(pixels[3::4]))
                 png = worker.render(scene["sceneId"], {}, 128, "8", "png")

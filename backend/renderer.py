@@ -1424,7 +1424,7 @@ class Renderer:
         bpy.data.collections.remove(collection)
         bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
 
-    def render(self, key, settings, size=512, aa="32"):
+    def render(self, key, settings, size=512, aa="32", progress=None):
         """Render a loaded model; returns straight-alpha display RGBA, bottom row first."""
         model = self.models.get(key)
         if model is None:
@@ -1439,16 +1439,28 @@ class Renderer:
         full_key = (key, json.dumps(full_settings, sort_keys=True), size, aa)
 
         needed = required_passes(settings)
+        total = 4 + len(needed)  # Setup, material detail, base image, effects, and optional passes.
+        completed = 0
+        def step(stage):
+            nonlocal completed
+            if progress:
+                progress(stage, completed, total)
+            completed += 1
+        step("Preparing model")
         text_key = ("text", json.dumps({name: settings[name] for name in TEXT_KEYS}, sort_keys=True), size, aa)
         pass_keys = {"normals": ("normals", base_key), "depth": ("depth", base_key), "flat": ("flat", base_key),
                      "detail": ("detail", base_key), "text": text_key}
         passes = {name: self.passes.get(pass_keys[name]) for name in needed}
+        if "text" in needed:
+            step("Rendering text")
         if "text" in needed and passes["text"] is None:
             # The text scene is independent of the model, so it never needs the model set up.
             passes["text"] = self.text.render(self.directory.name, settings, size, aa)
             self.passes.put(text_key, passes["text"])
         pixels = self.base_renders.get(cache_key)
         if pixels is not None and all(value is not None for value in passes.values()):
+            if progress:
+                progress("Applying image effects", total - 1, total)
             return post_process_pixels(pixels, settings, size, self.effect_masks, cache_key, passes)
 
         for other in self.models.values():
@@ -1460,6 +1472,7 @@ class Renderer:
         configure_camera(center, bounds, settings)
         configure_workbench(settings, self.studio_lights, size, aa)
 
+        step("Rendering material detail")
         detail = None
         if any(state["detail"] is not None for state in model["materials"]):
             detail = self.passes.get(pass_keys["detail"])
@@ -1468,6 +1481,7 @@ class Renderer:
                 render_detail(path, model["materials"])
                 detail = load_png_pixels(path)[..., :3]
                 self.passes.put(pass_keys["detail"], detail)
+        step("Rendering base image")
         if pixels is None:
             pixels = render_pixels(self.directory.name, model["objects"], settings["minAngle"], self.passes, full_key, base_key)
             if detail is not None:
@@ -1475,11 +1489,14 @@ class Renderer:
                 pixels[..., :3] *= detail
             self.base_renders.put(cache_key, pixels)
         for name, render in (("normals", render_surface_normals), ("depth", render_depth), ("flat", render_flat)):
+            if name in needed:
+                step(f"Rendering {name}")
             if name in needed and passes[name] is None:
                 passes[name] = capture_pass(self.directory.name, name, model["objects"], render)
                 if name == "flat" and detail is not None:
                     passes[name][..., :3] *= detail
                 self.passes.put(pass_keys[name], passes[name])
+        step("Applying image effects")
         free_render_result()
         return post_process_pixels(pixels, settings, size, self.effect_masks, cache_key, passes)
 

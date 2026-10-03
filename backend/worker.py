@@ -31,16 +31,22 @@ def main():
         with connection.makefile("rwb") as stream:
             stream.write(json.dumps({"token": token, "version": bpy.app.version_string}).encode() + b"\n")
             stream.flush()
+            def progress(stage, completed, total):
+                stream.write(json.dumps({"progress": {"stage": stage, "completed": completed, "total": total}}).encode() + b"\n")
+                stream.flush()
+
             for line in stream:
                 try:
                     request = json.loads(line)
                     if request["operation"] == "scene":
+                        progress("Preparing scene", 0, 1)
                         payload = json.loads((directory / "scene.json").read_bytes())
                         identifier, warnings = scenes.add(b"", payload)
                         result = {"sceneId": identifier, "warnings": warnings, "incomplete": scenes.incomplete(identifier)}
                         del payload
                         memory.release()
                     elif request["operation"] == "render":
+                        progress("Preparing render", 0, None)
                         identifier = request["sceneId"]
                         if not scenes.exists(identifier):
                             raise SceneError("Unknown scene; send it again")
@@ -50,10 +56,16 @@ def main():
                         size, aa = request["size"], request["aa"]
                         key = (identifier, json.dumps(settings, sort_keys=True), size, aa)
                         pixels = render_cache.get(key)
+                        render_steps = [0]
+                        def render_progress(stage, completed, total):
+                            # Capture the render's total for the final image-writing step.
+                            progress(stage, completed, total + 1)
+                            render_steps[0] = total
                         if pixels is None:
                             model = engine.load(scenes.path(identifier))
-                            pixels = engine.render(model, settings, size, aa)
+                            pixels = engine.render(model, settings, size, aa, progress=render_progress)
                             render_cache.put(key, pixels)
+                        progress("Saving image", render_steps[0], render_steps[0] + 1)
                         if request["format"] == "png":
                             renderer.save_png_pixels(pixels, directory / "render.png")
                         else:
@@ -62,6 +74,7 @@ def main():
                         del pixels
                         result = {"textBounds": engine.text_bounds(settings, size, aa)} if request.get("textBounds") else {}
                         memory.release()
+                        progress("Image ready", render_steps[0] + 1, render_steps[0] + 1)
                     else:
                         raise ValueError("Unknown worker operation")
                     response = {"ok": True, "result": result}

@@ -21,6 +21,7 @@ export type Bridge = {
 	httpBlocked: () -> boolean,
 	blender: () -> string?,
 	version: () -> string?,
+	renderProgress: () -> Types.RenderProgress?,
 	request: (method: string, path: string, body: any?) -> Response,
 	setPort: (number) -> (),
 	setActive: (boolean) -> (),
@@ -37,6 +38,7 @@ const function create(plugin: Plugin): Bridge
 	const connected = vide.source(false)
 	const blender = vide.source(nil :: string?)
 	const version = vide.source(nil :: string?)
+	const renderProgress = vide.source(nil :: Types.RenderProgress?)
 	const lastError = vide.source(nil :: string?)
 	local running = true
 	-- only poll while the widget is open.
@@ -90,8 +92,10 @@ const function create(plugin: Plugin): Bridge
 			const status = response.body :: Types.Status
 			blender(status.blender)
 			version(status.version)
+			renderProgress(status.renderProgress)
 			connected(true)
 		else
+			renderProgress(nil)
 			connected(false)
 		end
 	end
@@ -131,6 +135,7 @@ const function create(plugin: Plugin): Bridge
 		end,
 		blender = blender,
 		version = version,
+		renderProgress = renderProgress,
 		request = request,
 		setPort = function(value: number)
 			port(value)

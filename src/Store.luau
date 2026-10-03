@@ -959,6 +959,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		activePreset = activePreset,
 		notice = notice,
 		busy = busy,
+		renderProgress = bridge.renderProgress,
 		update = update,
 		updateState = updateState,
 		installedVersion = installedVersion,
