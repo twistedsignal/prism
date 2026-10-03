@@ -71,7 +71,7 @@ def text_fill(mask, settings):
     return start + (end - start) * t
 
 
-def text_layers(mask, settings, scale, cached):
+def text_layers(mask, settings, scale, cached, fill_mask=None):
     """Text shadow, glow, outline and fill as (rgb, alpha) layers, back to front."""
     layers = []
     signature = tuple(settings[name] for name in sorted(settings) if name.startswith("text"))
@@ -97,7 +97,7 @@ def text_layers(mask, settings, scale, cached):
         outline = cached(("textOutline", signature, width), lambda: fractional_dilation(mask, width))
         layers.append((color, np.clip(outline, 0.0, 1.0) * opacity))
     fill = text_fill(mask, settings)
-    layers.append((fill[..., :3], mask * fill[..., 3]))
+    layers.append((fill[..., :3], (mask if fill_mask is None else fill_mask) * fill[..., 3]))
     return layers
 
 
@@ -605,10 +605,19 @@ def post_process_pixels(pixels, settings, size, cache=None, key=None, passes=Non
         image = crt(image, settings["crtScanlines"], settings["crtCurvature"], scale)
     text = passes.get("text")
     if text is not None and text_visible(settings):
-        text = shift_mask(text, int(round(settings["textOffsetX"] * scale)),
-                          -int(round(settings["textOffsetY"] * scale)))
-        for color, amount in text_layers(np.clip(text, 0.0, 1.0), settings, scale, cached):
-            image = over(image, color, amount)
+        dx, dy = int(round(settings["textOffsetX"] * scale)), -int(round(settings["textOffsetY"] * scale))
+        if text.ndim == 3:
+            colored = np.stack([shift_mask(text[..., channel], dx, dy) for channel in range(4)], axis=2)
+            fill_mask = shift_mask(text[..., 4], dx, dy)
+            coverage = np.maximum(fill_mask, colored[..., 3])
+            for color, amount in text_layers(coverage, settings, scale, cached, fill_mask=fill_mask):
+                image = over(image, color, amount)
+            opacity = schema.hex_to_rgba(settings["textColor"])[3]
+            image = over(image, colored[..., :3], colored[..., 3] * opacity)
+        else:
+            text = shift_mask(text, dx, dy)
+            for color, amount in text_layers(np.clip(text, 0.0, 1.0), settings, scale, cached):
+                image = over(image, color, amount)
 
     image = np.clip(image, 0.0, 1.0)
     result = np.zeros_like(pixels)

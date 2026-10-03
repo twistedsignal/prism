@@ -368,7 +368,8 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema, 
 					return settings()[key] or ""
 				end,
 				onCommit = function(value)
-					store.setValue(key, string.sub(value, 1, setting.maxLength or 120))
+					const limit = utf8.offset(value, (setting.maxLength or 120) + 1)
+					store.setValue(key, if limit then string.sub(value, 1, limit - 1) else value)
 				end,
 			})
 		else

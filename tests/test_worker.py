@@ -132,6 +132,12 @@ class WorkerTests(unittest.TestCase):
                         self.assertNotIn("error", exported["results"][0])
                         self.assertEqual(render.call_args.args[2], size)
                         self.assertEqual(render.call_args.args[4], "png")
+            store.update_config({"emojiProvider": "facebook"})
+            with patch.object(bridge.worker, "render", wraps=bridge.worker.render) as render:
+                request("/preview", {"sceneId": scene["sceneId"], "settings": {"textEmojiProvider": "apple"}})
+                self.assertEqual(render.call_args.args[1]["textEmojiProvider"], "facebook")
+                request("/export", {"items": [{"sceneId": scene["sceneId"], "name": "Head"}]})
+                self.assertEqual(render.call_args.args[1]["textEmojiProvider"], "facebook")
             self.assertTrue(request("/status")["workerRunning"])
 
             # {index} is the model's position in the plugin list, not in the request.
@@ -282,6 +288,14 @@ class RuntimeTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("PRISM_TEST_BLENDER"), "Set PRISM_TEST_BLENDER to run Blender integration")
 class BlenderWorkerTests(unittest.TestCase):
+    def test_real_blender_emoji_and_roblox_glyphs(self):
+        result = subprocess.run([
+            os.environ["PRISM_TEST_BLENDER"], "--background", "--factory-startup",
+            "--python-exit-code", "1", "--python", str(ROOT / "tests" / "fixtures" / "blender_emoji.py"),
+        ], capture_output=True, text=True, timeout=180)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Blender emoji, Roblox glyph, rotation, bounds and provider cache checks passed", result.stdout)
+
     def test_real_blender_mesh_textures_and_union_colors(self):
         result = subprocess.run([
             os.environ["PRISM_TEST_BLENDER"], "--background", "--factory-startup",

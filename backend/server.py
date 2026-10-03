@@ -57,7 +57,9 @@ class Bridge:
     def render(self, scene_id, settings, size, aa, format="rgba", text_bounds=False):
         if not self.scenes.exists(scene_id):
             raise HttpError(404, "Unknown scene; send it again")
-        return self.worker.render(scene_id, schema.normalize(settings), size, aa, format, text_bounds=text_bounds)
+        settings = schema.normalize(settings)
+        settings["textEmojiProvider"] = self.store.get_config()["emojiProvider"]
+        return self.worker.render(scene_id, settings, size, aa, format, text_bounds=text_bounds)
 
     def output_path(self, folder, name, index, overwrite, pattern):
         stem = safe_filename(pattern.replace("{name}", safe_filename(name)).replace("{index}", str(index)))

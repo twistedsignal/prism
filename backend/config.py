@@ -60,6 +60,7 @@ CONFIG_DEFAULTS = {
     "ravenPath": "",
     "defaultCreator": "",
     "port": DEFAULT_PORT,
+    "emojiProvider": "google",
 }
 
 CREATOR_PATTERN = re.compile(r"^(user|group):\d+$")
@@ -90,6 +91,8 @@ def normalize_config(values):
             config[key] = CONFIG_DEFAULTS[key]
     if not 1024 <= config["port"] <= 65535:
         config["port"] = DEFAULT_PORT
+    if config["emojiProvider"] not in ("apple", "google", "facebook", "twitter"):
+        config["emojiProvider"] = CONFIG_DEFAULTS["emojiProvider"]
     if config["defaultCreator"] and not CREATOR_PATTERN.match(config["defaultCreator"]):
         config["defaultCreator"] = ""
     if "{name}" not in config["filenamePattern"] and "{index}" not in config["filenamePattern"]:

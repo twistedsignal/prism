@@ -66,6 +66,7 @@ export type Config = {
 	ravenPath: string,
 	defaultCreator: string,
 	port: number,
+	emojiProvider: string,
 }
 
 export type ModelState = "serializing" | "sending" | "ready" | "error"

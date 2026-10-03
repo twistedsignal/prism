@@ -11,6 +11,7 @@ from mathutils import Matrix, Quaternion, Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import schema  # noqa: E402
 import fonts  # noqa: E402
+import emoji  # noqa: E402
 from effects import EFFECT_KEYS, cavity_angle_mask, post_process_pixels, required_passes  # noqa: E402
 from render_cache import RenderCache  # noqa: E402
 import memory  # noqa: E402
@@ -1151,7 +1152,7 @@ def render_pixels(directory, objects, minimum_angle, cache=None, key=None, norma
 
 # Settings that change the rasterized text shape. Position offsets shift its cached mask later.
 TEXT_KEYS = ("text", "textFont", "textSize", "textRotation", "textWeight", "textBold", "textItalic",
-             "textUnderline", "textStrikethrough", "textLetterSpacing", "textLineSpacing")
+             "textUnderline", "textStrikethrough", "textLetterSpacing", "textLineSpacing", "textEmojiProvider")
 # Synthetic styles, in units of the font size, when the font has no matching face.
 ITALIC_SHEAR = 0.2
 WEIGHT_OFFSET_PER_100 = 0.01
@@ -1166,6 +1167,7 @@ class TextLayer:
     def __init__(self):
         self.scene = None
         self.objects = []
+        self.sprites = RenderCache(8 * 1024 * 1024)
 
     def ensure_scene(self):
         if self.scene is not None:
@@ -1226,6 +1228,52 @@ class TextLayer:
         obj.rotation_euler = (0.0, 0.0, -math.radians(settings["textRotation"]))
         self.scene.collection.objects.link(obj)
         self.objects.append(obj)
+        return obj
+
+    def mixed_text(self, body, settings, font, size, shear, offset):
+        """Place font runs and image glyphs on shared baselines before rotation."""
+        rotation = math.radians(settings["textRotation"])
+        cosine, sine = math.cos(rotation), math.sin(rotation)
+
+        def rotate(x, y):
+            return cosine * x + sine * y, -sine * x + cosine * y
+
+        def measure(text):
+            obj = self.add_text(text, settings, font, size, shear, offset, False, 0)
+            obj.rotation_euler = (0, 0, 0)
+            self.scene.view_layers[0].update()
+            width = obj.dimensions.x
+            self.objects.remove(obj)
+            curve = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.curves.remove(curve)
+            return width
+
+        marker = measure("|")
+        lines = body.split("\n")
+        line_height = size * 1.2 * settings["textLineSpacing"]
+        placements = []
+        for index, line in enumerate(lines):
+            runs = list(emoji.tokens(line))
+            widths = [size * settings["textLetterSpacing"] if image else max(0, measure(text + "|") - marker)
+                      for text, image in runs]
+            x = -sum(widths) / 2
+            y = ((len(lines) - 1) / 2 - index) * line_height - size * 0.35
+            for (text, image), width in zip(runs, widths):
+                if image:
+                    placements.append((text, rotate(x + width / 2, y + size * 0.4), size * 0.9))
+                else:
+                    obj = self.add_text(text, settings, font, size, shear, offset, settings["textUnderline"], UNDERLINE_POSITION)
+                    obj.data.align_x = "LEFT"
+                    obj.data.align_y = "TOP_BASELINE"
+                    obj.location.x, obj.location.y = rotate(x, y)
+                    if settings["textStrikethrough"]:
+                        strike = self.add_text(text, settings, font, size, shear, offset, True, STRIKE_POSITION)
+                        strike.data.align_x = "LEFT"
+                        strike.data.align_y = "TOP_BASELINE"
+                        strike.location = obj.location
+                x += width
+        return placements
 
     def render(self, directory, settings, size, aa):
         """Return the text coverage as an (h, w) array, rows bottom first."""
@@ -1245,9 +1293,13 @@ class TextLayer:
         text_size = settings["textSize"] / REFERENCE_RESOLUTION
         shear = ITALIC_SHEAR if italic and not face_italic else 0.0
         offset = max(-0.04, (weight - face_weight) / 100 * WEIGHT_OFFSET_PER_100) * text_size
-        body = settings["text"].replace("\\n", "\n")
-        self.add_text(body, settings, font, text_size, shear, offset, settings["textUnderline"], UNDERLINE_POSITION)
-        if settings["textStrikethrough"]:
+        body = emoji.decode_text(settings["text"])
+        placements = []
+        if any(image for _, image in emoji.tokens(body)):
+            placements = self.mixed_text(body, settings, font, text_size, shear, offset)
+        else:
+            self.add_text(body, settings, font, text_size, shear, offset, settings["textUnderline"], UNDERLINE_POSITION)
+        if settings["textStrikethrough"] and not placements:
             # Blender has no strikethrough: overlay an identical copy whose underline sits mid-height.
             self.add_text(body, settings, font, text_size, shear, offset, True, STRIKE_POSITION)
 
@@ -1258,7 +1310,21 @@ class TextLayer:
         scene.render.filepath = str(path)
         try:
             bpy.ops.render.render(write_still=True, scene=scene.name)
-            return np.ascontiguousarray(load_png_pixels(path)[..., 3])
+            mask = np.ascontiguousarray(load_png_pixels(path)[..., 3])
+            if not placements:
+                return mask
+            colored = np.zeros((size, size, 4), dtype=np.float32)
+            monochrome = np.zeros_like(colored)
+            for sequence, (x, y), side in placements:
+                asset = emoji.asset(sequence, settings["textEmojiProvider"])
+                sprite = self.sprites.get(str(asset))
+                if sprite is None:
+                    sprite = load_png_pixels(asset)
+                    self.sprites.put(str(asset), sprite)
+                target = monochrome if sequence in ("\ue001", "\ue002", "\ue003") else colored
+                emoji.place(target, sprite, ((x + 0.5) * size, (y + 0.5) * size), side * size, settings["textRotation"])
+            mask = np.maximum(mask, monochrome[..., 3])
+            return np.concatenate((colored, mask[..., None]), axis=2)
         finally:
             self.clear()
 
@@ -1339,7 +1405,8 @@ class Renderer:
         if mask is None:
             mask = self.text.render(self.directory.name, settings, size, aa)
             self.passes.put(text_key, mask)
-        ys, xs = np.nonzero(mask > 0.1)
+        coverage = np.maximum(mask[..., 3], mask[..., 4]) if mask.ndim == 3 else mask
+        ys, xs = np.nonzero(coverage > 0.1)
         if not len(xs):
             return None
         scale = REFERENCE_RESOLUTION / size

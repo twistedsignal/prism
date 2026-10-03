@@ -421,6 +421,8 @@ SECTIONS = [
                 "label": "Font",
                 "requires": "text",
                 "settings": [
+                    {"key": "textEmojiProvider", "label": "Emoji provider", "type": "select", "default": "google", "hidden": True,
+                     "options": [{"value": name, "label": name.title()} for name in ("apple", "google", "facebook", "twitter")]},
                     {"key": "textFont", "label": "Font", "type": "select", "default": "", "optionsSource": "fonts", "options": [{"value": "", "label": "Default"}],
                      "description": "Fonts installed on this computer, including Roblox Studio's fonts."},
                     {"key": "textSize", "label": "Text size", "type": "number", "min": 8, "max": 256, "step": 1, "default": 64,
@@ -593,7 +595,7 @@ def normalize_value(setting, value):
     if kind == "text":
         if not isinstance(value, str):
             return setting["default"]
-        return CONTROL_CHARACTERS.sub("", value)[:setting.get("maxLength", 120)]
+        return re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", value)[:setting.get("maxLength", 120)]
     if kind == "select":
         if not isinstance(value, str):
             return setting["default"]

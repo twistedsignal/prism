@@ -90,6 +90,8 @@ R15 classic clothing uses Roblox's compositing UV maps and preserves the body me
 
 Selected models refresh automatically when you edit their geometry, colors, materials, textures or clothing, or add and remove descendants. Rapid edits are combined before Prism sends a new scene. Your render settings stay in place.
 
+Text supports full-color emoji, including skin tones, flags and joined sequences. Choose Apple, Google, Facebook or Twitter in **Settings > Emoji provider**. Emoji images download on first use and stay cached for offline rendering. If a provider lacks an emoji, Prism uses an available provider, preferring Google. Roblox's Verified `\u{E000}`, Premium `\u{E001}`, Robux `\u{E002}` and Roblox Plus `\u{E003}` glyphs also work with any text font. Paste the characters or type these Unicode escapes into Text. Robux, Premium and Plus use the text color; emoji and Verified keep their original colors.
+
 Use the search bar below the render presets to filter settings by name, description, key or section. Matching sections and groups expand while you search. Clear the search to restore their previous collapse state. Conditional settings appear when their controls are enabled.
 
 The Lighting section's **Sync Lighting** button copies the place's global lighting into the

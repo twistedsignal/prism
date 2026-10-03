@@ -12,6 +12,7 @@ const new = vide.create
 
 const PREVIEW_SIZES = { 128, 256, 384, 512, 768, 1024 }
 const RENDER_SIZES = { 128, 256, 384, 512, 768, 1024, 2048, 4096 }
+const EMOJI_PROVIDERS = { "apple", "google", "facebook", "twitter" }
 const AA = { "OFF", "FXAA", "5", "8", "11", "16", "32" }
 
 export type Props = {
@@ -107,6 +108,26 @@ const function SettingsPage(props: Props): ScrollingFrame
 			description = "Show 3D while adjusting your model, then display the finished Blender preview automatically.",
 			value = store.auto3d,
 			onChange = store.setAuto3d,
+		})),
+
+		row(DropdownSetting({
+			name = "Emoji provider",
+			index = 1,
+			description = "Emoji artwork used in text previews, exports and uploads. Images download once and are cached for offline use.",
+			text = function()
+				const provider = config("emojiProvider") or "google"
+				return string.upper(string.sub(provider, 1, 1)) .. string.sub(provider, 2)
+			end,
+			options = function()
+				const list = {}
+				for _, provider in EMOJI_PROVIDERS do
+					table.insert(list, { value = provider, label = string.upper(string.sub(provider, 1, 1)) .. string.sub(provider, 2) })
+				end
+				return list
+			end,
+			onSelect = function(value)
+				store.updateConfig({ emojiProvider = value })
+			end,
 		})),
 
 		heading("Output", nextOrder()),

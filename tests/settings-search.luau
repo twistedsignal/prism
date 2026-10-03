@@ -29,7 +29,7 @@ local function node(props)
     return props
 end
 local function row(props)
-    local result = { name = props.name }
+    local result = { name = props.name, onCommit = props.onCommit }
     rows[props.name] = result
     return result
 end
@@ -69,6 +69,7 @@ local schema = { defaults = values, sections = {
     { id = 'camera', label = 'Camera', collapsed = true, settings = {
         { type = 'number', key = 'rotation', label = 'Rotation' },
         { type = 'number', key = 'zoom', label = 'Zoom', description = 'Scale the model' },
+        { type = 'text', key = 'caption', label = 'Caption', maxLength = 3 },
         { type = 'text', key = 'secret', label = 'Hidden', hidden = true },
     } },
     { id = 'lighting', label = 'Lighting', settings = {
@@ -81,7 +82,9 @@ local schema = { defaults = values, sections = {
         } },
     } },
 } }
-mount({ currentModel = function() return nil end, busy = function() return nil end },
+local committed
+mount({ currentModel = function() return nil end, busy = function() return nil end,
+    setValue = function(_, value) committed = value end },
     function() return schema end, function() return query end)
 local function refresh(text)
     query = text
@@ -120,3 +123,8 @@ assert(rows.Rotation.Visible and rows.Zoom.Visible and rows.Intensity.Visible)
 assert(not sectionsByName.Sun.forceExpanded() and sectionsByName.Sun.collapsed, 'Clearing search preserves collapse state')
 assert(not empty().Visible and rows.Hidden == nil, 'Hidden schema fields never render')
 print('Settings tree filtering, nested groups, conditional controls and empty state checks passed')
+
+rows.Caption.onCommit("😀😀😀😀")
+assert(committed == "😀😀😀" and utf8.len(committed) == 3, "Text limits must preserve complete Unicode characters")
+rows.Caption.onCommit("hi")
+assert(committed == "hi")

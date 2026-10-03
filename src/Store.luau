@@ -713,6 +713,12 @@ const function create(plugin: Plugin, bridge: Bridge)
 			const response = bridge.request("PUT", "/config", changes)
 			if response.ok then
 				config(response.body)
+				if changes.emojiProvider ~= nil then
+					requestPreview(true)
+					for _, model in models() do
+						queueThumbnail(model)
+					end
+				end
 			else
 				setNotice(response.error or "Could not save settings", "error")
 			end
