@@ -119,10 +119,16 @@ assert(store.previewView() == "3d" and writes == 1, "stale image switched back t
 table.remove(delayed, 1)()
 drain()
 assert(store.previewView() == "blender" and writes == 2)
+store.beginTextDrag()
+assert(store.textPreviewing(), "Text drag did not show the temporary preview")
 store.setTextOffset({ textOffsetX = 36, textOffsetY = -12 })
-assert(store.previewView() == "blender", "Text drag switched Auto-3D to the viewport")
+assert(store.previewView() == "blender", "Text drag changed the selected view")
 drain()
-assert(model.settings().textOffsetX == 36 and store.previewView() == "blender")
+assert(store.textPreviewing() and writes == 2, "Text drag rendered before release")
+store.endTextDrag()
+assert(store.textPreviewing(), "Text preview disappeared before the final render")
+drain()
+assert(model.settings().textOffsetX == 36 and store.previewView() == "blender" and not store.textPreviewing())
 -- Coalesced immediate edits also suppress the obsolete image.
 duringRender = function() store.setValue("yaw", 10) end
 store.requestPreview()

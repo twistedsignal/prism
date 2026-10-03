@@ -65,6 +65,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 	local previewRevision = 0
 	const previewVersion = source(0)
 	const previewTextBounds = source(nil :: Types.TextBounds?)
+	const textPreviewing = source(false)
+	local textDragActive = false
+	local textDragChanged = false
 	const previewState = source("idle" :: "idle" | "rendering" | "error")
 	const previewError = source(nil :: string?)
 	const busy = source(nil :: string?)
@@ -229,6 +232,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 				previewDirty = false
 				const model = currentModel()
 				if model == nil or model.state() == "serializing" or not bridge.connected() then
+					if not textDragActive then
+						textPreviewing(false)
+					end
 					break
 				end
 				const revision = previewRevision
@@ -240,18 +246,27 @@ const function create(plugin: Plugin, bridge: Bridge)
 				if response == nil then
 					previewState("error")
 					previewError(model.warning())
+					if not textDragActive then
+						textPreviewing(false)
+					end
 				elseif response.ok then
 					previewImage = writeImage(previewImage, response.body)
 					previewTextBounds(response.body.textBounds)
 					previewVersion(previewVersion() + 1)
 					previewState("idle")
 					previewError(nil)
+					if not textDragActive then
+						textPreviewing(false)
+					end
 					if auto3d() then
 						previewView("blender")
 					end
 				elseif response.status ~= 409 then
 					previewState("error")
 					previewError(response.error)
+					if not textDragActive then
+						textPreviewing(false)
+					end
 				end
 			end
 			previewBusy = false
@@ -373,6 +388,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 		selected(firstSelected or 1)
 		if previous ~= currentModel() then
 			activePreset(nil)
+			textDragActive = false
+			textDragChanged = false
+			textPreviewing(false)
 			previewTextBounds(nil)
 			if previewImage then
 				previewImage:Destroy()
@@ -435,6 +453,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 			return
 		end
 		selected(index)
+		textDragActive = false
+		textDragChanged = false
+		textPreviewing(false)
 		previewTextBounds(nil)
 		requestPreview()
 	end
@@ -449,21 +470,25 @@ const function create(plugin: Plugin, bridge: Bridge)
 	end
 
 	local cameraToken = 0
-	const function applyToTargets(change: (Types.Settings) -> (), deferPreview: boolean?, keepView: boolean?)
+	const function applyToTargets(change: (Types.Settings) -> (), deferPreview: boolean?, keepView: boolean?, skipPreview: boolean?)
 		invalidatePreview(keepView)
 		const affected = targets()
 		for _, model in affected do
 			const settings = cloneSettings(model.settings())
 			change(settings)
 			model.settings(settings)
-			queueThumbnail(model)
+			if not skipPreview then
+				queueThumbnail(model)
+			end
 		end
 		const model = currentModel()
 		if model then
 			rememberSettings(model.settings())
 		end
 		cameraToken += 1
-		if deferPreview then
+		if skipPreview then
+			return
+		elseif deferPreview then
 			const token = cameraToken
 			task.delay(0.12, function()
 				if not destroyed and cameraToken == token then
@@ -486,7 +511,14 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end, true)
 	end
 
+	const function beginTextDrag()
+		textDragActive = true
+		textDragChanged = false
+		textPreviewing(true)
+	end
+
 	const function setTextOffset(values: { [string]: number })
+		textDragChanged = true
 		activePreset(nil)
 		applyToTargets(function(settings)
 			for _, key in { "textOffsetX", "textOffsetY" } do
@@ -494,7 +526,21 @@ const function create(plugin: Plugin, bridge: Bridge)
 					settings[key] = math.clamp(math.round(values[key]), -512, 512)
 				end
 			end
-		end, false, true)
+		end, false, true, textDragActive)
+	end
+
+	const function endTextDrag()
+		textDragActive = false
+		if textDragChanged then
+			-- Render the final offset after the instant Studio preview.
+			for _, model in targets() do
+				queueThumbnail(model)
+			end
+			requestPreview(true)
+		else
+			textPreviewing(false)
+		end
+		textDragChanged = false
 	end
 
 	const function setValue(key: string, value: any)
@@ -841,6 +887,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end,
 		previewVersion = previewVersion,
 		previewTextBounds = previewTextBounds,
+		textPreviewing = textPreviewing,
 		previewState = previewState,
 		previewError = previewError,
 		previewImage = function(): EditableImage?
@@ -852,6 +899,8 @@ const function create(plugin: Plugin, bridge: Bridge)
 		setValue = setValue,
 		setCamera = setCamera,
 		setTextOffset = setTextOffset,
+		beginTextDrag = beginTextDrag,
+		endTextDrag = endTextDrag,
 		resetToDefaults = resetToDefaults,
 		copyToAll = copyToAll,
 		applyPreset = applyPreset,

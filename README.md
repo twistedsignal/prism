@@ -25,7 +25,7 @@ irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1 | iex
 ## Use Prism
 
 1. Select models, tools, accessories or parts in Studio. Click a card in Prism to work on one of them.
-2. Adjust the camera and settings. Drag the preview to orbit, scroll to zoom, or drag over text in the Blender preview to move it. Choose **This model** or **All** to set the editing scope.
+2. Adjust the camera and settings. Drag the preview to orbit, scroll to zoom, or drag over text in the Blender preview to move it. Studio text follows your mouse, then the Blender render replaces it. Choose **This model** or **All** to set the editing scope.
 3. Click **Render** to save PNGs to your output folder. Click **Upload** to send them to Roblox as Decals. Prism shows the image IDs you can use in `ImageLabel.Image`.
 
 The plugin has outlines, shadows, glow, color and depth effects, and text. Presets are saved locally. Prism also remembers a model's settings when you deselect and reselect it.

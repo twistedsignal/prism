@@ -25,11 +25,15 @@ export type Props = {
 	previewVersion: () -> number,
 	previewImage: () -> EditableImage?,
 	previewTextBounds: () -> Types.TextBounds?,
+	textPreviewing: () -> boolean,
+	fonts: () -> { Types.SelectOption },
 	previewState: () -> string,
 	previewError: () -> string?,
 	connected: () -> boolean,
 	setCamera: ({ [string]: number }) -> (),
 	setTextOffset: ({ [string]: number }) -> (),
+	beginTextDrag: () -> (),
+	endTextDrag: () -> (),
 	busy: () -> string?,
 }
 
@@ -202,6 +206,45 @@ const function Preview(props: Props): Frame
 		return activity() ~= ""
 	end
 	const hasImage = source(false)
+	const previewSize = source(Vector2.zero)
+
+	const function previewFont(name: string): Font
+		for _, option in props.fonts() do
+			if option.value == name and option.robloxFont then
+				return Font.new(option.robloxFont)
+			end
+		end
+		return Font.fromEnum(Enum.Font.SourceSans)
+	end
+
+	const function previewColor(value: string): (Color3, number)
+		const hex = string.upper(value or "#FFFFFFFF")
+		return Color3.fromRGB(
+			tonumber(string.sub(hex, 2, 3), 16) or 255,
+			tonumber(string.sub(hex, 4, 5), 16) or 255,
+			tonumber(string.sub(hex, 6, 7), 16) or 255
+		), (tonumber(string.sub(hex, 8, 9), 16) or 255) / 255
+	end
+
+	const function previewTextColor(settings: Types.Settings): (Color3, number)
+		local color, alpha = previewColor(settings.textColor or "#FFFFFFFF")
+		if alpha > 0 then
+			return color, alpha
+		end
+		if settings.textGradient then
+			color, alpha = previewColor(settings.textGradientColor or "#FFFFFFFF")
+		end
+		if alpha == 0 and (settings.textOutlineSize or 0) > 0 then
+			color, alpha = previewColor(settings.textOutlineColor or "#FFFFFFFF")
+		end
+		if alpha == 0 and settings.textGlow then
+			color, alpha = previewColor(settings.textGlowColor or "#FFFFFFFF")
+		end
+		if alpha == 0 and settings.textShadow then
+			color, alpha = previewColor(settings.textShadowColor or "#FFFFFFFF")
+		end
+		return color, alpha
+	end
 
 	effect(function()
 		props.previewVersion()
@@ -216,6 +259,7 @@ const function Preview(props: Props): Frame
 		Text = "",
 		AutoButtonColor = false,
 		ZIndex = 3,
+		vide.changed("AbsoluteSize", previewSize),
 		InputBegan = function(input: InputObject)
 			const model = props.currentModel()
 			if model == nil or input.UserInputType ~= Enum.UserInputType.MouseButton1 then
@@ -236,6 +280,9 @@ const function Preview(props: Props): Frame
 						and point.Y >= textBounds.y - padding and point.Y <= textBounds.y + textBounds.height + padding
 				end
 			end
+			if textDrag then
+				props.beginTextDrag()
+			end
 			Overlay.drag(input, function(position)
 				if props.currentModel() ~= model then
 					return
@@ -254,6 +301,10 @@ const function Preview(props: Props): Frame
 					end
 				else
 					props.setCamera(CameraControls.orbit(model.settings(), delta.X, delta.Y))
+				end
+			end, function()
+				if textDrag and props.currentModel() == model then
+					props.endTextDrag()
 				end
 			end)
 		end,
@@ -320,7 +371,7 @@ const function Preview(props: Props): Frame
 				BackgroundTransparency = 1,
 				ScaleType = Enum.ScaleType.Fit,
 				Visible = function()
-					return props.view() == "blender" and hasImage()
+					return props.view() == "blender" and hasImage() and not props.textPreviewing()
 				end,
 				ImageContent = function()
 					props.previewVersion()
@@ -330,6 +381,57 @@ const function Preview(props: Props): Frame
 				ImageTransparency = function()
 					return if props.previewState() == "rendering" then 0.15 else 0
 				end,
+			}),
+			new("TextLabel")({
+				Name = "TextDragPreview",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = function()
+					const model = props.currentModel()
+					const settings = if model then model.settings() else {}
+					const side = math.min(previewSize().X, previewSize().Y)
+					return UDim2.new(0.5, (settings.textOffsetX or 0) * side / 512,
+						0.5, (settings.textOffsetY or 0) * side / 512)
+				end,
+				Size = function()
+					const side = math.min(previewSize().X, previewSize().Y)
+					return UDim2.fromOffset(side, side)
+				end,
+				BackgroundTransparency = 1,
+				Visible = function()
+					return props.textPreviewing() and props.currentModel() ~= nil
+				end,
+				Text = function()
+					const model = props.currentModel()
+					return if model then string.gsub(model.settings().text or "", "\\n", "\n") else ""
+				end,
+				FontFace = function()
+					const model = props.currentModel()
+					return previewFont(if model then model.settings().textFont or "" else "")
+				end,
+				TextSize = function()
+					const model = props.currentModel()
+					const settings = if model then model.settings() else {}
+					return math.max(1, math.round((settings.textSize or 64) * math.min(previewSize().X, previewSize().Y) / 512))
+				end,
+				TextColor3 = function()
+					const model = props.currentModel()
+					const settings = if model then model.settings() else {}
+					local color, _ = previewTextColor(settings)
+					return color
+				end,
+				TextTransparency = function()
+					const model = props.currentModel()
+					const settings = if model then model.settings() else {}
+					local _, alpha = previewTextColor(settings)
+					return 1 - alpha
+				end,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				Rotation = function()
+					const model = props.currentModel()
+					return if model then model.settings().textRotation or 0 else 0
+				end,
+				ZIndex = 2,
 			}),
 			controls,
 			new("Frame")({
@@ -359,7 +461,7 @@ const function Preview(props: Props): Frame
 				}),
 			}),
 			vide.show(function()
-				return props.view() == "3d"
+				return props.view() == "3d" or props.textPreviewing()
 			end, function()
 				return Viewport(props)
 			end),
