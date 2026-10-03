@@ -226,7 +226,7 @@ const function SettingsPage(props: Props): ScrollingFrame
 
 			new("TextLabel")({
 				Position = UDim2.fromOffset(4, 10),
-				Size = UDim2.new(1, -140, 0, 50),
+				Size = UDim2.new(1, -280, 0, 50),
 				BackgroundTransparency = 1,
 				Text = function()
 					const backend = if props.bridge.connected()
@@ -239,6 +239,26 @@ const function SettingsPage(props: Props): ScrollingFrame
 				TextColor3 = Theme.SUBTLE,
 				Font = Enum.Font.SourceSans,
 				TextSize = 14,
+			}),
+			Button({
+				text = "Check for updates",
+				size = UDim2.fromOffset(132, 28),
+				position = UDim2.new(1, -134, 0, 10),
+				anchorPoint = Vector2.new(1, 0),
+				enabled = props.bridge.connected,
+				activated = function()
+					store.checkForUpdate(true, function(info, problem)
+						if info and info.available then
+							return
+						elseif info and not info.canUpdate then
+							store.setNotice("This backend runs from a source checkout; update it with git.", "info")
+						elseif problem then
+							store.setNotice(`Couldn't check for updates: {problem}`, "error")
+						else
+							store.setNotice(`Prism is up to date (v{props.pluginVersion}).`, "success")
+						end
+					end)
+				end,
 			}),
 			Button({
 				text = "Test connection",

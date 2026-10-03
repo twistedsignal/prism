@@ -10,6 +10,7 @@ const Serializer = require("./Serializer")
 const Store = require("./Store")
 const RenderPage = require("./pages/RenderPage")
 const SettingsPage = require("./pages/SettingsPage")
+const UpdatePrompt = require("./UpdatePrompt")
 const VERSION = require("./Version")
 
 const new = vide.create
@@ -103,6 +104,100 @@ const function App(props: Props): Frame
 			end,
 		}),
 	}) :: Frame
+
+	-- prompt once per studio session for each new version.
+	local promptedVersion: string? = nil
+	effect(function()
+		const info = store.update()
+		if info and info.available and info.latest and info.latest ~= promptedVersion then
+			promptedVersion = info.latest
+			task.defer(UpdatePrompt.open, store)
+		end
+	end)
+
+	const dismissedVersion = source(nil :: string?)
+	const bannerMode = function(): "restart" | "update" | nil
+		if store.updateState() == "restart" then
+			return "restart"
+		end
+		const info = store.update()
+		if info and info.available and info.latest ~= dismissedVersion() then
+			return "update"
+		end
+		return nil
+	end
+	const bannerHeight = function(): number
+		return if bannerMode() then 30 else 0
+	end
+
+	const banner = new("Frame")({
+		Name = "UpdateBanner",
+		Position = UDim2.fromOffset(0, HEADER_HEIGHT + 3),
+		Size = UDim2.new(1, 0, 0, 30),
+		BackgroundColor3 = Theme.BLUE_DARK,
+		BorderSizePixel = 0,
+		Visible = function()
+			return bannerMode() ~= nil
+		end,
+		ZIndex = 5,
+
+		new("TextLabel")({
+			Position = UDim2.fromOffset(12, 0),
+			Size = UDim2.new(1, -200, 1, 0),
+			BackgroundTransparency = 1,
+			Text = function()
+				if bannerMode() == "restart" then
+					return `Prism v{store.installedVersion() or "?"} is installed. Restart Roblox Studio to finish updating.`
+				end
+				const info = store.update()
+				return `Prism v{if info then info.latest else "?"} is available.`
+			end,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextColor3 = Theme.TEXT,
+			Font = Enum.Font.SourceSansSemibold,
+			TextSize = 14,
+			ZIndex = 5,
+		}),
+		vide.show(function()
+			return bannerMode() == "update"
+		end, function()
+			return new("Frame")({
+				Name = "Actions",
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -8, 0.5, 0),
+				Size = UDim2.fromOffset(176, 22),
+				BackgroundTransparency = 1,
+				ZIndex = 5,
+
+				Button({
+					text = "Later",
+					size = UDim2.fromOffset(64, 22),
+					textSize = 14,
+					activated = function()
+						const info = store.update()
+						dismissedVersion(if info then info.latest else nil)
+					end,
+				}),
+				Button({
+					text = function()
+						return if store.updateState() == "updating" then "Updating…" else "Update"
+					end,
+					variant = "accent",
+					size = UDim2.fromOffset(106, 22),
+					position = UDim2.fromScale(1, 0),
+					anchorPoint = Vector2.new(1, 0),
+					textSize = 14,
+					enabled = function()
+						return store.updateState() == "idle"
+					end,
+					activated = function()
+						UpdatePrompt.open(store)
+					end,
+				}),
+			})
+		end),
+	})
 
 	const tabs = new("Frame")({
 		Name = "Tabs",
@@ -234,10 +329,15 @@ const function App(props: Props): Frame
 			BorderSizePixel = 0,
 		}),
 		header,
+		banner,
 		new("Frame")({
 			Name = "Content",
-			Position = UDim2.fromOffset(0, HEADER_HEIGHT + 3 + 10),
-			Size = UDim2.new(1, 0, 1, -(HEADER_HEIGHT + 3 + 10 + FOOTER_HEIGHT + 10)),
+			Position = function()
+				return UDim2.fromOffset(0, HEADER_HEIGHT + 3 + 10 + bannerHeight())
+			end,
+			Size = function()
+				return UDim2.new(1, 0, 1, -(HEADER_HEIGHT + 3 + 10 + FOOTER_HEIGHT + 10 + bannerHeight()))
+			end,
 			BackgroundTransparency = 1,
 
 			vide.switch(page)({

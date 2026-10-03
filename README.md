@@ -22,7 +22,9 @@ curl -fsSL https://raw.githubusercontent.com/twistedsignal/prism/main/install.sh
 irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1 | iex
 ```
 
-Run the same command again to update. To uninstall:
+Prism checks GitHub for new releases. When one is out, the plugin offers to update. The backend then downloads the release, reinstalls itself and the plugin, and restarts. Restart Roblox Studio afterwards to load the new plugin. You can also check from **Settings → Check for updates**, or run the install command again.
+
+To uninstall:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/twistedsignal/prism/main/install.sh | bash -s -- --uninstall

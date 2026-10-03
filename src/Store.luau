@@ -9,7 +9,10 @@ const Serializer = require("./Serializer")
 
 const source = vide.source
 
+const VERSION = require("./Version")
+
 const LAST_SETTINGS_KEY = "PrismLastSettings"
+const UPDATE_CHECK_INTERVAL = 30 * 60
 const THUMBNAIL_SIZE = 128
 const THUMBNAIL_DELAY = 0.6
 const SAVE_DELAY = 1
@@ -21,6 +24,17 @@ type Bridge = {
 
 export type Mode = "one" | "all"
 export type Notice = { text: string, kind: "info" | "error" | "success" }
+export type UpdateInfo = {
+	current: string,
+	plugin: string?,
+	latest: string?,
+	available: boolean,
+	canUpdate: boolean,
+	notes: string,
+	url: string,
+	error: string?,
+}
+export type UpdateState = "idle" | "updating" | "restart"
 export type UploadResult = { name: string, assetId: string?, moderation: string?, path: string?, error: string? }
 
 const function cloneSettings(settings: Types.Settings): Types.Settings
@@ -40,6 +54,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const previewState = source("idle" :: "idle" | "rendering" | "error")
 	const previewError = source(nil :: string?)
 	const busy = source(nil :: string?)
+	const update = source(nil :: UpdateInfo?)
+	const updateState = source("idle" :: UpdateState)
+	const installedVersion = source(nil :: string?)
 
 	local lastSettings: Types.Settings = {}
 	task.spawn(function()
@@ -569,10 +586,59 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end)
 	end
 
+	-- ---------------------------------------------------------------
+	-- updates
+	-- ---------------------------------------------------------------
+
+	const function checkForUpdate(force: boolean?, onResult: ((UpdateInfo?, string?) -> ())?)
+		task.spawn(function()
+			const query = `/update?plugin={HttpService:UrlEncode(VERSION)}{if force then "&force=1" else ""}`
+			const response = bridge.request("GET", query)
+			if response.ok and type(response.body) == "table" then
+				update(response.body)
+				if onResult then
+					onResult(response.body, response.body.error)
+				end
+			elseif onResult then
+				onResult(nil, response.error or "Could not reach the Prism backend")
+			end
+		end)
+	end
+
+	const function installUpdate(onDone: (ok: boolean, message: string, plugins: { string }) -> ())
+		if updateState() ~= "idle" then
+			return
+		end
+		updateState("updating")
+		task.spawn(function()
+			const response = bridge.request("POST", "/update")
+			if response.ok and type(response.body) == "table" then
+				installedVersion(response.body.version)
+				updateState("restart")
+				onDone(true, response.body.version, response.body.plugins or {})
+			else
+				updateState("idle")
+				onDone(false, response.error or "The update failed.", {})
+			end
+		end)
+	end
+
+	task.spawn(function()
+		while not destroyed do
+			task.wait(UPDATE_CHECK_INTERVAL)
+			if bridge.connected() and updateState() == "idle" then
+				checkForUpdate()
+			end
+		end
+	end)
+
 	-- reload backend data whenever the bridge (re)connects.
 	vide.effect(function()
 		if bridge.connected() then
 			task.spawn(loadRemote)
+			if vide.untrack(updateState) ~= "restart" then
+				checkForUpdate()
+			end
 		end
 	end)
 
@@ -586,6 +652,11 @@ const function create(plugin: Plugin, bridge: Bridge)
 		activePreset = activePreset,
 		notice = notice,
 		busy = busy,
+		update = update,
+		updateState = updateState,
+		installedVersion = installedVersion,
+		checkForUpdate = checkForUpdate,
+		installUpdate = installUpdate,
 		previewVersion = previewVersion,
 		previewState = previewState,
 		previewError = previewError,

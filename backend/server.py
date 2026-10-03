@@ -5,10 +5,11 @@ import json
 import re
 import sys
 import threading
+import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import bpy
 
@@ -16,6 +17,7 @@ import config
 import platform_open
 import renderer
 import schema
+import updater
 import uploader
 from jobs import JobQueue, Superseded
 from scene import SceneCache, SceneError
@@ -45,6 +47,8 @@ class Bridge:
         self.jobs = JobQueue()
         self.scenes = SceneCache(config.cache_dir())
         self.renderer = None
+        self.updates = updater.Checker()
+        self.updating = threading.Lock()
 
     # ---- main-thread work ------------------------------------------------
 
@@ -264,6 +268,34 @@ def make_handler(bridge):
                     result["error"] = str(error)
             return 200, {"results": results, "creator": creator}
 
+        def update_status(self):
+            query = parse_qs(urlsplit(self.path).query)
+            plugin_version = (query.get("plugin") or [None])[0]
+            force = (query.get("force") or ["0"])[0] == "1"
+            return 200, bridge.updates.status(plugin_version, force)
+
+        def update(self):
+            if not bridge.updating.acquire(blocking=False):
+                raise HttpError(409, "An update is already running")
+            try:
+                status = bridge.updates.status(force=True)
+                version = status["latest"]
+                if not version:
+                    raise HttpError(502, status["error"] or "Could not find the latest release")
+                if not status["canUpdate"]:
+                    raise HttpError(400, "Prism is running from a source checkout; update it with git instead.")
+                try:
+                    plugins = updater.install(version)
+                except updater.UpdateError as error:
+                    raise HttpError(502, str(error)) from error
+            except BaseException:
+                bridge.updating.release()
+                raise
+            print(f"[prism] Updated to {version}; restarting")
+            # Restart after this response reaches the plugin.
+            threading.Timer(1.0, updater.restart).start()
+            return 200, {"version": version, "plugins": plugins, "restarting": True}
+
         def open_folder(self):
             folder = bridge.store.get_config()["outputFolder"]
             platform_open.open_folder(folder)
@@ -288,15 +320,28 @@ def make_handler(bridge):
         ("POST", "/preview"): Handler.preview,
         ("POST", "/export"): Handler.export,
         ("POST", "/upload"): Handler.upload,
+        ("GET", "/update"): Handler.update_status,
+        ("POST", "/update"): Handler.update,
         ("POST", "/open-folder"): Handler.open_folder,
         ("POST", "/pick-folder"): Handler.pick_folder,
     }
     return Handler
 
 
+def bind(bridge, port, attempts=30):
+    """Retry briefly: after an update the previous backend may still be releasing the port."""
+    for attempt in range(attempts):
+        try:
+            return ThreadingHTTPServer(("127.0.0.1", port), make_handler(bridge))
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.5)
+
+
 def serve(store, port):
     bridge = Bridge(store)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(bridge))
+    httpd = bind(bridge, port)
     httpd.daemon_threads = True
     thread = threading.Thread(target=httpd.serve_forever, name="prism-http", daemon=True)
     thread.start()
