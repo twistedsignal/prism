@@ -290,6 +290,14 @@ class BlenderWorkerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Blender pass-cache checks passed", result.stdout)
 
+    def test_real_blender_effects_and_passes(self):
+        result = subprocess.run([
+            os.environ["PRISM_TEST_BLENDER"], "--background", "--factory-startup",
+            "--python-exit-code", "1", "--python", str(ROOT / "tests" / "fixtures" / "blender_effects.py"),
+        ], capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Blender effect checks passed", result.stdout)
+
     def test_real_scene_render_export_idle_restart_and_recovery(self):
         with tempfile.TemporaryDirectory() as temporary:
             worker = worker_client.Worker(command=[

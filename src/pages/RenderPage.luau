@@ -11,6 +11,8 @@ const Section = require("../components/Section")
 const SliderSetting = require("../components/SliderSetting")
 const ToggleSetting = require("../components/ToggleSetting")
 const ColorSetting = require("../components/ColorSetting")
+const DropdownSetting = require("../components/DropdownSetting")
+const TextBoxSetting = require("../components/TextBoxSetting")
 const ModelCard = require("../components/ModelCard")
 const Preview = require("../components/Preview")
 const Modal = require("../components/Modal")
@@ -262,7 +264,7 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 	}) :: Frame
 
 	for sectionIndex, sectionSchema in schema().sections do
-		const section = Section(container, sectionSchema.label, 0)
+		const section = Section(container, sectionSchema.label, 0, sectionSchema.collapsed)
 		section.header.LayoutOrder = sectionIndex * 2
 		section.body.LayoutOrder = sectionIndex * 2 + 1
 		const function updateHeight()
@@ -317,11 +319,54 @@ const function SettingsSections(store: Store.Store, schema: () -> Types.Schema):
 						store.setValue(key, value)
 					end,
 				})
+			elseif setting.type == "select" then
+				const options = function(): { Types.SelectOption }
+					const list = table.clone(setting.options or {})
+					if setting.optionsSource == "fonts" then
+						for _, font in store.fonts() do
+							table.insert(list, { value = font.value, label = font.label })
+						end
+					end
+					return list
+				end
+				row = DropdownSetting({
+					name = setting.label,
+					index = rowIndex,
+					description = setting.description,
+					text = function()
+						const current = settings()[key]
+						for _, option in options() do
+							if option.value == current then
+								return option.label
+							end
+						end
+						-- a saved font that isn't installed on this computer.
+						return if current == "" then "Default" else `{current} (missing)`
+					end,
+					options = options,
+					onSelect = function(value)
+						store.setValue(key, value)
+					end,
+				})
+			elseif setting.type == "text" then
+				row = TextBoxSetting({
+					name = setting.label,
+					index = rowIndex,
+					description = setting.description,
+					placeholderText = "None",
+					value = function()
+						return settings()[key] or ""
+					end,
+					onCommit = function(value)
+						store.setValue(key, string.sub(value, 1, setting.maxLength or 120))
+					end,
+				})
 			else
 				row = ColorSetting({
 					name = setting.label,
 					index = rowIndex,
 					description = setting.description,
+					alpha = setting.type == "rgba",
 					value = function()
 						return settings()[key]
 					end,

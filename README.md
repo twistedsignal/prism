@@ -43,6 +43,17 @@ Uninstalling removes the startup entry, backend, cache and plugin. It doesn't ne
 3. Use **3D** for an instant Studio viewport, or **Blender** for the real render. Drag the preview to orbit and scroll to zoom. These gestures update the actual camera settings for the current editing scope. A loading circle shows when Prism is reading or rendering.
 4. **Render** saves PNGs to your output folder. **Upload** sends them to Roblox as Decals and shows the image ids to use in `ImageLabel.Image`. **Open folder** opens the output folder.
 
+### Effects
+
+Every effect runs on the finished render, so tweaking one never waits on Blender. The extra sections start collapsed:
+
+- **Effects:** saturation, contrast, brightness, outline, drop shadow and glow.
+- **Color:** color overlay (RGBA, so its alpha sets the strength), cel shading, heatmap (by brightness or depth), duotone and tritone.
+- **Stylize:** halftone, ordered dither, pixelate (nearest-neighbor), chromatic aberration, CRT and bloom.
+- **Depth:** X-ray, depth tint and depth outlines between overlapping parts.
+- **Inner shadow** and **Vignette** (color, strength and opacity at the image border).
+- **Text:** centered over the render and drawn above every other effect, including the color overlay. Pick the font, size, rotation, weight, RGBA color, bold, italic, underline and strikethrough. Type `\n` for a new line. The font list shows Roblox Studio's fonts first, then your system fonts. Prism uses a font's own bold and italic faces when it has them, and synthesizes the rest.
+
 Presets are saved on your computer, so they work in every game. The **Settings** tab holds the output folder, file names, render sizes, quality, the default upload creator and the backend port. Changing the port restarts the backend on the new port.
 
 If the header says **HTTP access blocked**, allow Prism to reach `127.0.0.1` under **Plugins → Manage Plugins**.
@@ -81,7 +92,7 @@ Completed renders use a 64 MB memory cache in the Blender worker, shared by prev
 
 Auto-3D is enabled by default in the plugin's Settings tab. It hides the 3D/Blender picker, shows the Studio viewport immediately when you edit the camera or model settings, and switches to the matching Blender preview when rendering finishes. Turn it off to choose either view manually. The preference is saved per Studio user.
 
-Image effects reuse the rendered image, so saturation, contrast, brightness, outline, shadow and glow edits skip Blender entirely. Silhouettes and blurred masks are reused when only colors, opacity or shadow offsets change. Cavity angle changes reuse the color, base and normals passes; turning cavity off reuses the base pass. Intermediate PNGs use no compression. These additional worker caches are bounded to 112 MiB and released when the worker shuts down.
+Image effects reuse the rendered image, so every effect edit skips Blender entirely. Cel shading, X-ray and the depth effects add one extra pass each (unlit color, surface normals or camera depth); text renders in its own small scene. These passes are rendered once per model and camera, then cached. Silhouettes and blurred masks are reused when only colors, opacity or shadow offsets change. Cavity angle changes reuse the color, base and normals passes; turning cavity off reuses the base pass. Intermediate PNGs use no compression. These additional worker caches are bounded to 112 MiB and released when the worker shuts down.
 
 R15 classic clothing uses Roblox's compositing UV maps and preserves the body meshes' original UV islands, including wrists, knees and ankles. Primitive fallback parts sample the sleeve or pant seam at internal joints instead of repeating the shoulder or hip cap.
 

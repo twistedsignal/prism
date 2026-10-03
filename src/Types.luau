@@ -5,7 +5,9 @@ export type Status = {
 	platform: string,
 }
 
-export type SettingType = "number" | "bool" | "color"
+export type SettingType = "number" | "bool" | "color" | "rgba" | "text" | "select"
+
+export type SelectOption = { value: string, label: string }
 
 export type SettingSchema = {
 	key: string,
@@ -18,11 +20,16 @@ export type SettingSchema = {
 	auto: string?,
 	hidden: boolean?,
 	description: string?,
+	options: { SelectOption }?,
+	-- "fonts": options come from the backend's installed fonts.
+	optionsSource: string?,
+	maxLength: number?,
 }
 
 export type SectionSchema = {
 	id: string,
 	label: string,
+	collapsed: boolean?,
 	settings: { SettingSchema },
 }
 

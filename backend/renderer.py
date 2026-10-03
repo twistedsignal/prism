@@ -10,7 +10,8 @@ from mathutils import Matrix, Quaternion, Vector
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import schema  # noqa: E402
-from effects import EFFECT_KEYS, cavity_angle_mask, post_process_pixels  # noqa: E402
+import fonts  # noqa: E402
+from effects import EFFECT_KEYS, cavity_angle_mask, post_process_pixels, required_passes  # noqa: E402
 from render_cache import RenderCache  # noqa: E402
 
 
@@ -871,8 +872,80 @@ def save_png_pixels(pixels, path):
         bpy.data.images.remove(image)
 
 
+def corner_normals(mesh, obj, camera):
+    """Camera-space corner normals encoded as 0..1 RGB."""
+    normals = np.empty(len(mesh.loops) * 3, dtype=np.float32)
+    mesh.corner_normals.foreach_get("vector", normals)
+    normals = normals.reshape(-1, 3)
+    transform = camera.matrix_world.to_3x3().inverted() @ obj.matrix_world.to_3x3().inverted().transposed()
+    normals = normals @ np.asarray(transform, dtype=np.float32).T
+    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
+    np.divide(normals, lengths, out=normals, where=lengths > 1e-6)
+    return normals * 0.5 + 0.5
+
+
+def corner_depths(mesh, obj, camera):
+    """Distance in front of the camera for every corner, normalized later."""
+    positions = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
+    mesh.vertices.foreach_get("co", positions)
+    indices = np.empty(len(mesh.loops), dtype=np.int32)
+    mesh.loops.foreach_get("vertex_index", indices)
+    transform = np.asarray(camera.matrix_world.inverted() @ obj.matrix_world, dtype=np.float32)
+    points = positions.reshape(-1, 3)[indices]
+    view_z = points @ transform[2, :3] + transform[2, 3]
+    return np.repeat(-view_z[:, None], 3, axis=1)
+
+
+def normalize_depths(values):
+    """Map corner depths so the model's nearest point is 0 and its farthest 1."""
+    filled = [value for value in values if len(value)]
+    if not filled:
+        return values
+    near = min(float(value.min()) for value in filled)
+    span = max(max(float(value.max()) for value in filled) - near, 1e-6)
+    return [(value - near) / span for value in values]
+
+
+def load_pass_pixels(path):
+    """Read a render_corner_colors() pass back as the original 0..1 values."""
+    pixels = load_png_pixels(path)
+    values = pixels[..., :3]
+    pixels[..., :3] = np.where(
+        values <= 0.0031308, values * 12.92, 1.055 * np.maximum(values, 0.0) ** (1 / 2.4) - 0.055,
+    )
+    return pixels
+
+
 def render_surface_normals(path, objects):
-    """Render camera-space corner normals as flat RGB, restoring scene state."""
+    render_corner_colors(path, objects, corner_normals)
+
+
+def render_depth(path, objects):
+    render_corner_colors(path, objects, corner_depths, normalize_depths)
+
+
+def render_flat(path, objects):
+    """Render unlit surface colors, for separating lighting from color."""
+    scene = bpy.context.scene
+    shading = scene.display.shading
+    names = ("light", "show_cavity", "show_shadows", "show_specular_highlight")
+    saved = {name: getattr(shading, name) for name in names}
+    filepath = scene.render.filepath
+    try:
+        shading.light = "FLAT"
+        shading.show_cavity = False
+        shading.show_shadows = False
+        shading.show_specular_highlight = False
+        scene.render.filepath = str(path)
+        bpy.ops.render.render(write_still=True)
+    finally:
+        for name, value in saved.items():
+            setattr(shading, name, value)
+        scene.render.filepath = filepath
+
+
+def render_corner_colors(path, objects, values, normalize=None):
+    """Render per-corner values in 0..1 as flat RGB, restoring scene state."""
     scene = bpy.context.scene
     shading = scene.display.shading
     settings = {name: getattr(shading, name) for name in (
@@ -886,7 +959,6 @@ def render_surface_normals(path, objects):
     film_transparent = scene.render.film_transparent
     originals = []
     bpy.context.view_layer.update()
-    camera_rotation = scene.camera.matrix_world.to_3x3().inverted()
     depsgraph = bpy.context.evaluated_depsgraph_get()
     try:
         # Copies retain UVs/materials and respect modifiers without changing
@@ -899,23 +971,17 @@ def render_surface_normals(path, objects):
             )
             modifiers = [(modifier, modifier.show_render) for modifier in obj.modifiers]
             originals.append((obj, obj.data, mesh, modifiers))
-            normals = np.empty(len(mesh.loops) * 3, dtype=np.float32)
-            mesh.corner_normals.foreach_get("vector", normals)
-            normals = normals.reshape(-1, 3)
-            transform = camera_rotation @ obj.matrix_world.to_3x3().inverted().transposed()
-            normals = normals @ np.asarray(transform, dtype=np.float32).T
-            lengths = np.linalg.norm(normals, axis=1, keepdims=True)
-            np.divide(normals, lengths, out=normals, where=lengths > 1e-6)
+        encoded = [values(mesh, obj, scene.camera) for obj, _, mesh, _ in originals]
+        if normalize is not None:
+            encoded = normalize(encoded)
+        for (obj, _, mesh, modifiers), corners in zip(originals, encoded):
             colors = np.ones((len(mesh.loops), 4), dtype=np.float32)
-            encoded = normals * 0.5 + 0.5
-            # Workbench converts vertex RGB from sRGB to linear even for
-            # float attributes. Compensate so Raw output stores the normals.
-            colors[:, :3] = np.where(
-                encoded <= 0.0031308, encoded * 12.92,
-                1.055 * np.maximum(encoded, 0.0) ** (1 / 2.4) - 0.055,
-            )
+            # Workbench interpolates the stored values, then converts each pixel
+            # from sRGB to linear. load_pass_pixels() undoes that per pixel, which
+            # keeps values interpolated linearly across every triangle.
+            colors[:, :3] = np.clip(corners, 0.0, 1.0)
             attribute = mesh.color_attributes.new(
-                name="Cavity Surface Normals", type="FLOAT_COLOR", domain="CORNER",
+                name="Prism Pass", type="FLOAT_COLOR", domain="CORNER",
             )
             attribute.data.foreach_set("color", colors.ravel())
             mesh.color_attributes.active_color = attribute
@@ -967,11 +1033,12 @@ def render_pixels(directory, objects, minimum_angle, cache=None, key=None, norma
             path = directory / f"{name}.png"
             if normals:
                 render_surface_normals(path, objects)
+                pixels = load_pass_pixels(path)
             else:
                 shading.show_cavity = cavity
                 scene.render.filepath = str(path)
                 bpy.ops.render.render(write_still=True)
-            pixels = load_png_pixels(path)
+                pixels = load_png_pixels(path)
             if cache is not None:
                 cache.put(cache_key, pixels)
         return pixels
@@ -996,6 +1063,121 @@ def render_pixels(directory, objects, minimum_angle, cache=None, key=None, norma
         scene.render.image_settings.compression = compression
 
 
+# ============================================================
+# TEXT
+# ============================================================
+
+TEXT_KEYS = ("text", "textFont", "textSize", "textRotation", "textWeight", "textBold", "textItalic",
+             "textUnderline", "textStrikethrough")
+# Synthetic styles, in units of the font size, when the font has no matching face.
+ITALIC_SHEAR = 0.2
+WEIGHT_OFFSET_PER_100 = 0.01
+UNDERLINE_POSITION = -0.1
+STRIKE_POSITION = 0.25
+LINE_HEIGHT = 0.05
+
+
+class TextLayer:
+    """Renders the text overlay as a coverage mask in its own Workbench scene."""
+
+    def __init__(self):
+        self.scene = None
+        self.objects = []
+
+    def ensure_scene(self):
+        if self.scene is not None:
+            return self.scene
+        scene = bpy.data.scenes.new("Prism Text")
+        camera_data = bpy.data.cameras.new("Prism Text Camera")
+        camera_data.type = "ORTHO"
+        # The image spans one unit, so sizes are fractions of the image width.
+        camera_data.ortho_scale = 1.0
+        camera = bpy.data.objects.new("Prism Text Camera", camera_data)
+        camera.location = (0.0, 0.0, 5.0)
+        scene.collection.objects.link(camera)
+        scene.camera = camera
+        scene.render.engine = "BLENDER_WORKBENCH"
+        shading = scene.display.shading
+        shading.light = "FLAT"
+        shading.color_type = "SINGLE"
+        shading.single_color = (1.0, 1.0, 1.0)
+        shading.show_cavity = False
+        shading.show_shadows = False
+        shading.show_specular_highlight = False
+        scene.render.film_transparent = True
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = "PNG"
+        scene.render.image_settings.color_mode = "RGBA"
+        scene.render.image_settings.color_depth = "8"
+        scene.render.image_settings.compression = 0
+        scene.view_settings.view_transform = "Standard"
+        self.scene = scene
+        return scene
+
+    def clear(self):
+        for obj in self.objects:
+            curve = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.curves.remove(curve)
+        self.objects = []
+
+    def add_text(self, body, settings, font, size, shear, offset, underline, position):
+        curve = bpy.data.curves.new("Prism Text", type="FONT")
+        if font is not None:
+            curve.font = font
+        curve.body = body
+        curve.align_x = "CENTER"
+        curve.align_y = "CENTER"
+        curve.size = size
+        curve.shear = shear
+        curve.offset = offset
+        if underline:
+            for character in curve.body_format:
+                character.use_underline = True
+            curve.underline_position = position
+            curve.underline_height = LINE_HEIGHT
+        obj = bpy.data.objects.new("Prism Text", curve)
+        # Positive rotation turns clockwise, as in Roblox.
+        obj.rotation_euler = (0.0, 0.0, -math.radians(settings["textRotation"]))
+        self.scene.collection.objects.link(obj)
+        self.objects.append(obj)
+
+    def render(self, directory, settings, size, aa):
+        """Return the text coverage as an (h, w) array, rows bottom first."""
+        scene = self.ensure_scene()
+        self.clear()
+        weight = min(900, settings["textWeight"] + (300 if settings["textBold"] else 0))
+        italic = settings["textItalic"]
+        resolved = fonts.resolve(settings["textFont"], weight, italic)
+        font = None
+        face_weight, face_italic = 400, False
+        if resolved is not None:
+            path, face_weight, face_italic = resolved
+            try:
+                font = bpy.data.fonts.load(path, check_existing=True)
+            except RuntimeError:
+                font, face_weight, face_italic = None, 400, False
+        text_size = settings["textSize"] / REFERENCE_RESOLUTION
+        shear = ITALIC_SHEAR if italic and not face_italic else 0.0
+        offset = max(-0.04, (weight - face_weight) / 100 * WEIGHT_OFFSET_PER_100) * text_size
+        body = settings["text"].replace("\\n", "\n")
+        self.add_text(body, settings, font, text_size, shear, offset, settings["textUnderline"], UNDERLINE_POSITION)
+        if settings["textStrikethrough"]:
+            # Blender has no strikethrough: overlay an identical copy whose underline sits mid-height.
+            self.add_text(body, settings, font, text_size, shear, offset, True, STRIKE_POSITION)
+
+        scene.render.resolution_x = size
+        scene.render.resolution_y = size
+        scene.display.render_aa = aa
+        path = Path(directory) / "text.png"
+        scene.render.filepath = str(path)
+        try:
+            bpy.ops.render.render(write_still=True, scene=scene.name)
+            return np.ascontiguousarray(load_png_pixels(path)[..., 3])
+        finally:
+            self.clear()
+
+
 class Renderer:
     """Keeps imported models loaded so settings changes only re-render.
 
@@ -1012,6 +1194,7 @@ class Renderer:
         self.passes = RenderCache(max_bytes=64 * 1024 * 1024)
         self.base_renders = RenderCache(max_bytes=32 * 1024 * 1024)
         self.effect_masks = RenderCache(max_bytes=16 * 1024 * 1024)
+        self.text = TextLayer()
 
     def load(self, input_path):
         """Import an OBJ once; returns its key for render()."""
@@ -1071,12 +1254,27 @@ class Renderer:
         settings = schema.normalize(settings)
         geometry_settings = {name: value for name, value in settings.items() if name not in EFFECT_KEYS}
         cache_key = (key, json.dumps(geometry_settings, sort_keys=True), size, aa)
+        cavity_keys = {"cavity", "minAngle", "worldRidge", "worldValley", "screenRidge", "screenValley"}
+        base_settings = {name: value for name, value in geometry_settings.items() if name not in cavity_keys}
+        base_key = (key, json.dumps(base_settings, sort_keys=True), size, aa)
+        full_settings = {name: value for name, value in geometry_settings.items() if name != "minAngle"}
+        full_key = (key, json.dumps(full_settings, sort_keys=True), size, aa)
+
+        needed = required_passes(settings)
+        text_key = ("text", json.dumps({name: settings[name] for name in TEXT_KEYS}, sort_keys=True), size, aa)
+        pass_keys = {"normals": ("normals", base_key), "depth": ("depth", base_key), "flat": ("flat", base_key),
+                     "text": text_key}
+        passes = {name: self.passes.get(pass_keys[name]) for name in needed}
+        if "text" in needed and passes["text"] is None:
+            # The text scene is independent of the model, so it never needs the model set up.
+            passes["text"] = self.text.render(self.directory.name, settings, size, aa)
+            self.passes.put(text_key, passes["text"])
         pixels = self.base_renders.get(cache_key)
-        if pixels is not None:
-            return post_process_pixels(pixels, settings, size, self.effect_masks, cache_key)
+        if pixels is not None and all(value is not None for value in passes.values()):
+            return post_process_pixels(pixels, settings, size, self.effect_masks, cache_key, passes)
+
         for other in self.models.values():
             other["collection"].hide_render = other is not model
-
         apply_material_settings(model["materials"], settings)
         apply_geometry_settings(model, settings)
         rotate_model(model, (settings["pitch"], settings["yaw"], settings["roll"]))
@@ -1084,14 +1282,20 @@ class Renderer:
         configure_camera(center, bounds, settings)
         configure_workbench(settings, self.studio_lights, size, aa)
 
-        cavity_keys = {"cavity", "minAngle", "worldRidge", "worldValley", "screenRidge", "screenValley"}
-        base_settings = {name: value for name, value in geometry_settings.items() if name not in cavity_keys}
-        base_key = (key, json.dumps(base_settings, sort_keys=True), size, aa)
-        full_settings = {name: value for name, value in geometry_settings.items() if name != "minAngle"}
-        full_key = (key, json.dumps(full_settings, sort_keys=True), size, aa)
-        pixels = render_pixels(self.directory.name, model["objects"], settings["minAngle"], self.passes, full_key, base_key)
-        self.base_renders.put(cache_key, pixels)
-        return post_process_pixels(pixels, settings, size, self.effect_masks, cache_key)
+        if pixels is None:
+            pixels = render_pixels(self.directory.name, model["objects"], settings["minAngle"], self.passes, full_key, base_key)
+            self.base_renders.put(cache_key, pixels)
+        for name, render in (("normals", render_surface_normals), ("depth", render_depth), ("flat", render_flat)):
+            if name in needed and passes[name] is None:
+                passes[name] = capture_pass(self.directory.name, name, model["objects"], render)
+                self.passes.put(pass_keys[name], passes[name])
+        return post_process_pixels(pixels, settings, size, self.effect_masks, cache_key, passes)
+
+
+def capture_pass(directory, name, objects, render):
+    path = Path(directory) / f"{name}.png"
+    render(path, objects)
+    return load_png_pixels(path) if name == "flat" else load_pass_pixels(path)
 
 
 def to_rgba8_top_down(pixels):

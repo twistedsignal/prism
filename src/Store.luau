@@ -53,6 +53,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const schema = source(nil :: Types.Schema?)
 	const config = source(nil :: Types.Config?)
 	const presets = source({} :: { [string]: Types.Settings })
+	const fonts = source({} :: { Types.SelectOption })
 	const models = source({} :: { Types.Model })
 	const selected = source(1)
 	const mode = source("all" :: Mode)
@@ -548,6 +549,10 @@ const function create(plugin: Plugin, bridge: Bridge)
 		if presetResponse.ok then
 			presets(presetResponse.body)
 		end
+		const fontResponse = bridge.request("GET", "/fonts")
+		if fontResponse.ok and type(fontResponse.body) == "table" and type(fontResponse.body.fonts) == "table" then
+			fonts(fontResponse.body.fonts)
+		end
 		for _, model in models() do
 			if model.sceneId() == nil and payloads[model.id] and sendScene(model) then
 				queueThumbnail(model)
@@ -794,6 +799,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		schema = schema,
 		config = config,
 		presets = presets,
+		fonts = fonts,
 		models = models,
 		selected = selected,
 		mode = mode,

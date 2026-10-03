@@ -1,5 +1,5 @@
 -- selene: allow(mixed_table)
--- popup color picker: saturation/value square, hue bar, hex and rgb inputs, recent colors.
+-- popup color picker: saturation/value square, hue bar, optional alpha bar, hex and rgb inputs, recent colors.
 const vide = require("../vide")
 const Theme = require("./Theme")
 const Overlay = require("../Overlay")
@@ -10,18 +10,27 @@ const source = vide.source
 const WIDTH = 236
 const SQUARE_HEIGHT = 150
 const MAX_RECENT = 8
+const ALPHA_HEIGHT = 24
 
 const recent: { string } = {}
 
 export type Props = {
+	-- #RRGGBB, or #RRGGBBAA when alpha is true.
 	value: string,
+	alpha: boolean?,
 	anchor: GuiObject,
 	onChange: (hex: string) -> (),
 }
 
 const function fromHex(hex: string): Color3
-	const ok, color = pcall(Color3.fromHex, hex)
+	const ok, color = pcall(Color3.fromHex, string.sub(string.gsub(hex, "#", ""), 1, 6))
 	return if ok then color else Color3.new(1, 1, 1)
+end
+
+-- the alpha of a #RRGGBBAA string, 1 when it has none.
+const function alphaOf(hex: string): number
+	const digits = string.match(hex, "^#?%x%x%x%x%x%x(%x%x)$")
+	return if digits then (tonumber(digits, 16) :: number) / 255 else 1
 end
 
 const function toHex(color: Color3): string
@@ -73,14 +82,23 @@ const function open(props: Props)
 	const hue = source(initialHue)
 	const saturation = source(initialSaturation)
 	const value = source(initialValue)
+	const opacity = source(alphaOf(props.value))
 	const original = props.value
+	const alphaSpace = if props.alpha then ALPHA_HEIGHT else 0
 
 	const function color(): Color3
 		return Color3.fromHSV(hue(), saturation(), value())
 	end
 
+	const function output(): string
+		if props.alpha then
+			return `{toHex(color())}{string.format("%02X", math.round(opacity() * 255))}`
+		end
+		return toHex(color())
+	end
+
 	const function commit()
-		props.onChange(toHex(color()))
+		props.onChange(output())
 	end
 
 	const function setColor(next: Color3)
@@ -96,7 +114,7 @@ const function open(props: Props)
 
 	const layer = Overlay.layer()
 	const anchor = Overlay.toLocal(props.anchor.AbsolutePosition)
-	const height = 12 + SQUARE_HEIGHT + 10 + 14 + 10 + 26 + 10 + 22 + 12
+	const height = 12 + SQUARE_HEIGHT + 10 + 14 + 10 + 26 + 10 + 22 + 12 + alphaSpace
 	const x = math.clamp(anchor.X + props.anchor.AbsoluteSize.X - WIDTH, 4, math.max(4, layer.AbsoluteSize.X - WIDTH - 4))
 	const below = anchor.Y + props.anchor.AbsoluteSize.Y + height + 4 <= layer.AbsoluteSize.Y
 	const y = if below then anchor.Y + props.anchor.AbsoluteSize.Y + 4 else math.max(4, anchor.Y - height - 4)
@@ -114,6 +132,12 @@ const function open(props: Props)
 
 		const function pickHue(position: Vector2)
 			hue(math.clamp((position.X - hueBar.AbsolutePosition.X) / hueBar.AbsoluteSize.X, 0, 0.999))
+			commit()
+		end
+
+		local alphaBar: Frame
+		const function pickAlpha(position: Vector2)
+			opacity(math.clamp((position.X - alphaBar.AbsolutePosition.X) / alphaBar.AbsoluteSize.X, 0, 1))
 			commit()
 		end
 
@@ -294,10 +318,69 @@ const function open(props: Props)
 					}),
 				}),
 
+				if props.alpha
+					then new("TextButton")({
+						Name = "Alpha",
+						Size = UDim2.new(1, 0, 0, 14),
+						Position = UDim2.fromOffset(0, SQUARE_HEIGHT + 34),
+						BackgroundColor3 = Color3.new(1, 1, 1),
+						BorderSizePixel = 0,
+						Text = "",
+						AutoButtonColor = false,
+						ZIndex = Theme.OVERLAY_Z + 2,
+						vide.action(function(instance)
+							alphaBar = instance :: Frame
+						end),
+						InputBegan = function(event: InputObject)
+							if event.UserInputType == Enum.UserInputType.MouseButton1 then
+								pickAlpha(Vector2.new(event.Position.X, event.Position.Y))
+								Overlay.drag(event, pickAlpha)
+							end
+						end,
+
+						new("UICorner")({ CornerRadius = UDim.new(0, 4) }),
+						-- checkerless: fade from transparent to the chosen color over a dark base.
+						new("Frame")({
+							Name = "Base",
+							Size = UDim2.fromScale(1, 1),
+							BackgroundColor3 = Theme.DARKER,
+							BorderSizePixel = 0,
+							ZIndex = Theme.OVERLAY_Z + 2,
+							new("UICorner")({ CornerRadius = UDim.new(0, 4) }),
+						}),
+						new("Frame")({
+							Name = "Fill",
+							Size = UDim2.fromScale(1, 1),
+							BackgroundColor3 = color,
+							BorderSizePixel = 0,
+							ZIndex = Theme.OVERLAY_Z + 3,
+
+							new("UICorner")({ CornerRadius = UDim.new(0, 4) }),
+							new("UIGradient")({
+								Transparency = NumberSequence.new(1, 0),
+							}),
+						}),
+						new("Frame")({
+							Name = "Cursor",
+							AnchorPoint = Vector2.new(0.5, 0.5),
+							Size = UDim2.new(0, 6, 1, 6),
+							Position = function()
+								return UDim2.fromScale(opacity(), 0.5)
+							end,
+							BackgroundColor3 = Color3.new(1, 1, 1),
+							BorderSizePixel = 0,
+							ZIndex = Theme.OVERLAY_Z + 4,
+
+							new("UICorner")({ CornerRadius = UDim.new(0, 2) }),
+							new("UIStroke")({ Color = Theme.DARKER, Thickness = 1 }),
+						}),
+					})
+					else nil,
+
 				new("Frame")({
 					Name = "Inputs",
 					Size = UDim2.new(1, 0, 0, 26),
-					Position = UDim2.fromOffset(0, SQUARE_HEIGHT + 34),
+					Position = UDim2.fromOffset(0, SQUARE_HEIGHT + 34 + alphaSpace),
 					BackgroundTransparency = 1,
 					ZIndex = Theme.OVERLAY_Z + 2,
 
@@ -310,6 +393,7 @@ const function open(props: Props)
 						AutoButtonColor = false,
 						ZIndex = Theme.OVERLAY_Z + 2,
 						Activated = function()
+							opacity(alphaOf(original))
 							setColor(fromHex(original))
 						end,
 
@@ -317,14 +401,15 @@ const function open(props: Props)
 						new("UICorner")({ CornerRadius = UDim.new(0, 3) }),
 					}),
 					input({
-						text = function()
-							return toHex(color())
-						end,
+						text = output,
 						size = UDim2.fromOffset(58, 26),
 						position = UDim2.fromOffset(30, 0),
 						onCommit = function(text)
-							const hex = string.match(text, "^#?(%x%x%x%x%x%x)$")
+							const hex, alphaDigits = string.match(text, "^#?(%x%x%x%x%x%x)(%x?%x?)$")
 							if hex then
+								if props.alpha and #alphaDigits == 2 then
+									opacity((tonumber(alphaDigits, 16) :: number) / 255)
+								end
 								setColor(fromHex(hex))
 							end
 						end,
@@ -337,7 +422,7 @@ const function open(props: Props)
 				new("Frame")({
 					Name = "Recent",
 					Size = UDim2.new(1, 0, 0, 22),
-					Position = UDim2.fromOffset(0, SQUARE_HEIGHT + 70),
+					Position = UDim2.fromOffset(0, SQUARE_HEIGHT + 70 + alphaSpace),
 					BackgroundTransparency = 1,
 					ZIndex = Theme.OVERLAY_Z + 2,
 

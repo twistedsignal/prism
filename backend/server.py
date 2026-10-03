@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import config
+import fonts
 import platform_open
 import schema
 import updater
@@ -212,6 +213,9 @@ def make_handler(bridge):
         def get_schema(self):
             return 200, schema.schema()
 
+        def get_fonts(self):
+            return 200, {"fonts": fonts.listing()}
+
         def get_config(self):
             return 200, bridge.store.get_config()
 
@@ -337,6 +341,7 @@ def make_handler(bridge):
     ROUTES = {
         ("GET", "/status"): Handler.status,
         ("GET", "/schema"): Handler.get_schema,
+        ("GET", "/fonts"): Handler.get_fonts,
         ("GET", "/config"): Handler.get_config,
         ("PUT", "/config"): Handler.put_config,
         ("GET", "/presets"): Handler.get_presets,

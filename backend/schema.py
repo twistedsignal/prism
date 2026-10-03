@@ -80,6 +80,7 @@ SECTIONS = [
     {
         "id": "effects",
         "label": "Effects",
+        "effects": True,
         "settings": [
             {"key": "saturation", "label": "Saturation", "type": "number", "min": 0, "max": 3, "step": 0.01, "default": 1,
              "description": "0 is grayscale, 1 leaves colors unchanged."},
@@ -114,6 +115,172 @@ SECTIONS = [
         ],
     },
     {
+        "id": "color",
+        "label": "Color",
+        "effects": True,
+        "collapsed": True,
+        "settings": [
+            {"key": "colorOverlay", "label": "Enable color overlay", "type": "bool", "default": False,
+             "description": "Tint the model with a color. Its alpha sets how strongly the color covers the model."},
+            {"key": "colorOverlayColor", "label": "Overlay color", "type": "rgba", "default": "#FF3B3B80",
+             "description": "Overlay color and opacity."},
+            {"key": "celShading", "label": "Enable cel shading", "type": "bool", "default": False,
+             "description": "Flatten shading into a few hard-edged bands, like a cartoon."},
+            {"key": "celLevels", "label": "Cel bands", "type": "number", "min": 2, "max": 8, "step": 1, "default": 3,
+             "description": "Number of brightness bands."},
+            {"key": "heatmap", "label": "Enable heatmap", "type": "bool", "default": False,
+             "description": "Recolor the model with a thermal-camera palette."},
+            {"key": "heatmapSource", "label": "Heatmap source", "type": "select", "default": "brightness",
+             "options": [{"value": "brightness", "label": "Brightness"}, {"value": "depth", "label": "Depth (near is hot)"}],
+             "description": "What drives the heat: the shaded brightness, or how close each surface is to the camera."},
+            {"key": "duotone", "label": "Enable duotone", "type": "bool", "default": False,
+             "description": "Map brightness onto a gradient between two colors."},
+            {"key": "duotoneShadow", "label": "Duotone shadows", "type": "color", "default": "#1B1464",
+             "description": "Color of the darkest areas."},
+            {"key": "duotoneHighlight", "label": "Duotone highlights", "type": "color", "default": "#FFC857",
+             "description": "Color of the brightest areas."},
+            {"key": "tritone", "label": "Enable tritone", "type": "bool", "default": False,
+             "description": "Map brightness onto a gradient through three colors."},
+            {"key": "tritoneShadow", "label": "Tritone shadows", "type": "color", "default": "#14213D",
+             "description": "Color of the darkest areas."},
+            {"key": "tritoneMidtone", "label": "Tritone midtones", "type": "color", "default": "#E5383B",
+             "description": "Color of the middle tones."},
+            {"key": "tritoneHighlight", "label": "Tritone highlights", "type": "color", "default": "#FCECC9",
+             "description": "Color of the brightest areas."},
+        ],
+    },
+    {
+        "id": "stylize",
+        "label": "Stylize",
+        "effects": True,
+        "collapsed": True,
+        "settings": [
+            {"key": "halftone", "label": "Enable halftone", "type": "bool", "default": False,
+             "description": "Print-style dot pattern; darker areas get bigger dots."},
+            {"key": "halftoneSize", "label": "Halftone dot size", "type": "number", "min": 2, "max": 32, "step": 1, "default": 6,
+             "description": "Spacing of the dot grid in pixels at 512px."},
+            {"key": "halftoneStrength", "label": "Halftone strength", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.6,
+             "description": "How much the dots darken and the gaps lighten."},
+            {"key": "dither", "label": "Enable dither", "type": "bool", "default": False,
+             "description": "Reduce colors with an ordered (Bayer) dither pattern."},
+            {"key": "ditherLevels", "label": "Dither levels", "type": "number", "min": 2, "max": 16, "step": 1, "default": 4,
+             "description": "Shades per color channel."},
+            {"key": "ditherScale", "label": "Dither pixel size", "type": "number", "min": 1, "max": 8, "step": 1, "default": 1,
+             "description": "Size of each dither pixel at 512px."},
+            {"key": "pixelate", "label": "Enable pixelate", "type": "bool", "default": False,
+             "description": "Downscale into large square pixels with nearest-neighbor sampling."},
+            {"key": "pixelSize", "label": "Pixel size", "type": "number", "min": 2, "max": 64, "step": 1, "default": 8,
+             "description": "Pixel block size at 512px."},
+            {"key": "chromaticAberration", "label": "Enable chromatic aberration", "type": "bool", "default": False,
+             "description": "Split the red and blue channels sideways for a glitchy look."},
+            {"key": "chromaticAmount", "label": "Aberration amount", "type": "number", "min": 1, "max": 32, "step": 1, "default": 4,
+             "description": "Channel offset in pixels at 512px."},
+            {"key": "crt", "label": "Enable CRT", "type": "bool", "default": False,
+             "description": "Old TV look: scanlines, an RGB phosphor mask and screen curvature."},
+            {"key": "crtScanlines", "label": "CRT scanlines", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.5,
+             "description": "Darkness of the scanlines and phosphor mask."},
+            {"key": "crtCurvature", "label": "CRT curvature", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.2,
+             "description": "How much the image bulges like a curved screen."},
+            {"key": "bloom", "label": "Enable bloom", "type": "bool", "default": False,
+             "description": "Make bright areas glow."},
+            {"key": "bloomThreshold", "label": "Bloom threshold", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.7,
+             "description": "Only areas brighter than this glow."},
+            {"key": "bloomIntensity", "label": "Bloom intensity", "type": "number", "min": 0, "max": 3, "step": 0.01, "default": 1,
+             "description": "Strength of the glow."},
+            {"key": "bloomRadius", "label": "Bloom radius", "type": "number", "min": 1, "max": 64, "step": 1, "default": 12,
+             "description": "Glow spread in pixels at 512px."},
+        ],
+    },
+    {
+        "id": "depth",
+        "label": "Depth",
+        "effects": True,
+        "collapsed": True,
+        "settings": [
+            {"key": "xray", "label": "Enable X-ray", "type": "bool", "default": False,
+             "description": "Glowing see-through look: edges facing away from the camera are bright, the middle is faint."},
+            {"key": "xrayColor", "label": "X-ray color", "type": "color", "default": "#7FD4FF",
+             "description": "Color of the X-ray glow."},
+            {"key": "xrayFalloff", "label": "X-ray falloff", "type": "number", "min": 0.5, "max": 4, "step": 0.05, "default": 1.5,
+             "description": "Higher values keep the glow closer to the edges."},
+            {"key": "depthTint", "label": "Enable depth tint", "type": "bool", "default": False,
+             "description": "Tint parts further from the camera, like fog."},
+            {"key": "depthTintColor", "label": "Depth tint color", "type": "color", "default": "#6FA8FF",
+             "description": "Color the far parts fade toward."},
+            {"key": "depthTintStrength", "label": "Depth tint strength", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.5,
+             "description": "How strongly the farthest parts are tinted."},
+            {"key": "depthOutlineSize", "label": "Depth outline thickness", "type": "number", "min": 0, "max": 12, "step": 0.5, "default": 0,
+             "description": "Draw lines where parts overlap at different depths, in pixels at 512px. 0 disables them."},
+            {"key": "depthOutlineColor", "label": "Depth outline color", "type": "color", "default": "#000000",
+             "description": "Color of the depth outlines."},
+        ],
+    },
+    {
+        "id": "innerShadow",
+        "label": "Inner shadow",
+        "effects": True,
+        "collapsed": True,
+        "settings": [
+            {"key": "innerShadow", "label": "Enable inner shadow", "type": "bool", "default": False,
+             "description": "Shade the inside edges of the silhouette."},
+            {"key": "innerShadowColor", "label": "Inner shadow color", "type": "color", "default": "#000000",
+             "description": "Color of the inner shadow."},
+            {"key": "innerShadowOpacity", "label": "Inner shadow opacity", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.5,
+             "description": "Opacity of the inner shadow."},
+            {"key": "innerShadowBlur", "label": "Inner shadow blur", "type": "number", "min": 0, "max": 40, "step": 0.5, "default": 6,
+             "description": "Blur radius in pixels at 512px."},
+            {"key": "innerShadowOffsetX", "label": "Inner shadow X offset", "type": "number", "min": -32, "max": 32, "step": 1, "default": 4,
+             "description": "Positive values cast the shadow to the right, darkening the left inside edges."},
+            {"key": "innerShadowOffsetY", "label": "Inner shadow Y offset", "type": "number", "min": -32, "max": 32, "step": 1, "default": 4,
+             "description": "Positive values cast the shadow downward, darkening the top inside edges."},
+        ],
+    },
+    {
+        "id": "vignette",
+        "label": "Vignette",
+        "effects": True,
+        "collapsed": True,
+        "settings": [
+            {"key": "vignette", "label": "Enable vignette", "type": "bool", "default": False,
+             "description": "Fade the borders of the image into a color."},
+            {"key": "vignetteColor", "label": "Vignette color", "type": "color", "default": "#000000",
+             "description": "Color at the image borders."},
+            {"key": "vignetteStrength", "label": "Vignette strength", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.5,
+             "description": "How far the vignette reaches toward the center."},
+            {"key": "vignetteOpacity", "label": "Vignette opacity", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.6,
+             "description": "Opacity of the vignette at the corners."},
+        ],
+    },
+    {
+        "id": "text",
+        "label": "Text",
+        "effects": True,
+        "collapsed": True,
+        "settings": [
+            {"key": "text", "label": "Text", "type": "text", "default": "", "maxLength": 120,
+             "description": "Text drawn over the center of the render, above every other effect. Leave empty for none. Use \\n for a new line."},
+            {"key": "textFont", "label": "Font", "type": "select", "default": "", "optionsSource": "fonts",
+             "options": [{"value": "", "label": "Default"}],
+             "description": "Fonts installed on this computer, including Roblox Studio's fonts."},
+            {"key": "textSize", "label": "Text size", "type": "number", "min": 8, "max": 256, "step": 1, "default": 64,
+             "description": "Font size in pixels at 512px."},
+            {"key": "textRotation", "label": "Text rotation", "type": "number", "min": -180, "max": 180, "step": 1, "default": 0,
+             "description": "Clockwise rotation in degrees."},
+            {"key": "textWeight", "label": "Text weight", "type": "number", "min": 100, "max": 900, "step": 100, "default": 400,
+             "description": "100 is thin, 400 regular, 700 bold, 900 black. Uses the font's own weights when it has them."},
+            {"key": "textColor", "label": "Text color", "type": "rgba", "default": "#FFFFFFFF",
+             "description": "Text color and opacity."},
+            {"key": "textBold", "label": "Bold", "type": "bool", "default": False,
+             "description": "Adds 300 to the text weight."},
+            {"key": "textItalic", "label": "Italic", "type": "bool", "default": False,
+             "description": "Slant the text. Uses the font's italic style when it has one."},
+            {"key": "textUnderline", "label": "Underline", "type": "bool", "default": False,
+             "description": "Draw a line under the text."},
+            {"key": "textStrikethrough", "label": "Strikethrough", "type": "bool", "default": False,
+             "description": "Draw a line through the text."},
+        ],
+    },
+    {
         "id": "geometry",
         "label": "Geometry",
         "settings": [
@@ -145,7 +312,13 @@ SECTIONS = [
 
 SETTINGS = {setting["key"]: setting for section in SECTIONS for setting in section["settings"]}
 DEFAULTS = {key: setting["default"] for key, setting in SETTINGS.items()}
+# Image effects run on the rendered pixels, so changing them never re-renders in Blender.
+EFFECT_KEYS = frozenset(
+    setting["key"] for section in SECTIONS if section.get("effects") for setting in section["settings"]
+)
 HEX_COLOR = re.compile(r"^#?([0-9a-fA-F]{6})$")
+HEX_RGBA = re.compile(r"^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$")
+CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def schema():
@@ -159,6 +332,20 @@ def normalize_value(setting, value):
     if kind == "color":
         match = HEX_COLOR.match(value) if isinstance(value, str) else None
         return f"#{match.group(1).upper()}" if match else setting["default"]
+    if kind == "rgba":
+        match = HEX_RGBA.match(value) if isinstance(value, str) else None
+        return f"#{match.group(1).upper()}{(match.group(2) or 'FF').upper()}" if match else setting["default"]
+    if kind == "text":
+        if not isinstance(value, str):
+            return setting["default"]
+        return CONTROL_CHARACTERS.sub("", value)[:setting.get("maxLength", 120)]
+    if kind == "select":
+        if not isinstance(value, str):
+            return setting["default"]
+        if "optionsSource" in setting:
+            # Dynamic options (fonts) differ per machine; the renderer falls back when missing.
+            return CONTROL_CHARACTERS.sub("", value)[:100]
+        return value if any(option["value"] == value for option in setting["options"]) else setting["default"]
     if kind == "number":
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             return setting["default"]
@@ -173,6 +360,12 @@ def normalize(settings):
         key: normalize_value(setting, settings.get(key, setting["default"]))
         for key, setting in SETTINGS.items()
     }
+
+
+def hex_to_rgba(value):
+    """Parse #RRGGBBAA into display-space floats."""
+    value = value.lstrip("#")
+    return tuple(int(value[i:i + 2], 16) / 255 for i in (0, 2, 4, 6))
 
 
 def hex_to_rgb(value):

@@ -12,6 +12,8 @@ export type Props = {
 	description: string?,
 	value: () -> string,
 	onChange: (string) -> (),
+	-- edit #RRGGBBAA with an opacity bar.
+	alpha: boolean?,
 }
 
 const function ColorSetting(props: Props): Frame
@@ -34,6 +36,7 @@ const function ColorSetting(props: Props): Frame
 		Activated = function()
 			ColorPicker.open({
 				value = props.value(),
+				alpha = props.alpha,
 				anchor = button,
 				onChange = props.onChange,
 			})
@@ -47,8 +50,12 @@ const function ColorSetting(props: Props): Frame
 			Size = UDim2.new(0, 34, 1, -6),
 			Position = UDim2.fromOffset(3, 3),
 			BackgroundColor3 = function()
-				const ok, color = pcall(Color3.fromHex, props.value())
+				const ok, color = pcall(Color3.fromHex, string.sub(string.gsub(props.value(), "#", ""), 1, 6))
 				return if ok then color else Color3.new(1, 1, 1)
+			end,
+			BackgroundTransparency = function()
+				const digits = string.match(props.value(), "^#?%x%x%x%x%x%x(%x%x)$")
+				return if digits then 1 - (tonumber(digits, 16) :: number) / 255 else 0
 			end,
 			BorderSizePixel = 0,
 

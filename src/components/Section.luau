@@ -14,9 +14,9 @@ export type Section = {
 	isExpanded: () -> boolean,
 }
 
-const function Section(parent: Instance, text: string, initialBodyHeight: number): Section
+const function Section(parent: Instance, text: string, initialBodyHeight: number, collapsed: boolean?): Section
 	const bodyHeight = source(initialBodyHeight)
-	const expanded = source(true)
+	const expanded = source(not collapsed)
 	local body: Frame
 	local arrowIcon: ImageLabel
 	local bodyLayout: UIListLayout

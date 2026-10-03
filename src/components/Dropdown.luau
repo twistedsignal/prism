@@ -6,6 +6,9 @@ const Overlay = require("../Overlay")
 const new = vide.create
 
 const MAX_LIST_HEIGHT = 220
+-- longer lists (fonts) get a search box.
+const SEARCH_THRESHOLD = 12
+const SEARCH_HEIGHT = 28
 
 export type Option = { label: string, value: any }
 
@@ -24,17 +27,26 @@ const function openList(button: GuiObject, options: { Option }, onSelect: (any) 
 	const layer = Overlay.layer()
 	const position = Overlay.toLocal(button.AbsolutePosition)
 	const count = math.max(#options, 1)
-	const height = math.min(count * Theme.DROPDOWN_ROW_HEIGHT, MAX_LIST_HEIGHT)
+	const searchable = #options > SEARCH_THRESHOLD
+	const listHeight = math.min(count * Theme.DROPDOWN_ROW_HEIGHT, MAX_LIST_HEIGHT)
+	const height = listHeight + if searchable then SEARCH_HEIGHT + 4 else 0
 	const below = position.Y + button.AbsoluteSize.Y + height <= layer.AbsoluteSize.Y - 4
 	const y = if below then position.Y + button.AbsoluteSize.Y + 2 else position.Y - height - 2
+	const width = math.max(button.AbsoluteSize.X, 140)
+	const query = vide.source("")
 
 	Overlay.mount(function(close)
 		const rows = {}
 		for index, option in options do
+			const label = string.lower(option.label)
 			table.insert(rows, new("TextButton")({
 				Name = option.label,
 				Size = UDim2.new(1, 0, 0, Theme.DROPDOWN_ROW_HEIGHT),
 				LayoutOrder = index,
+				Visible = function()
+					const text = string.lower(query())
+					return text == "" or string.find(label, text, 1, true) ~= nil
+				end,
 				BackgroundColor3 = if index % 2 == 0 then Theme.ROW_ALT else Theme.ROW,
 				BorderSizePixel = 0,
 				Text = `  {option.label}`,
@@ -71,10 +83,37 @@ const function openList(button: GuiObject, options: { Option }, onSelect: (any) 
 			ZIndex = Theme.OVERLAY_Z,
 
 			Overlay.dismissLayer(close),
+			if searchable
+				then new("TextBox")({
+					Name = "Search",
+					Size = UDim2.fromOffset(width, SEARCH_HEIGHT),
+					Position = UDim2.fromOffset(position.X, y),
+					BackgroundColor3 = Theme.INPUT,
+					BorderSizePixel = 0,
+					ClearTextOnFocus = false,
+					PlaceholderText = "Search…",
+					PlaceholderColor3 = Theme.SUBTLE,
+					Text = "",
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextColor3 = Theme.TEXT,
+					Font = Enum.Font.SourceSans,
+					TextSize = 15,
+					ZIndex = Theme.OVERLAY_Z + 1,
+					vide.changed("Text", query),
+					vide.action(function(instance)
+						task.defer(function()
+							(instance :: TextBox):CaptureFocus()
+						end)
+					end),
+
+					Theme.stroke(Theme.BORDER),
+					new("UIPadding")({ PaddingLeft = UDim.new(0, 8) }),
+				})
+				else nil,
 			new("ScrollingFrame")({
 				Name = "List",
-				Size = UDim2.fromOffset(math.max(button.AbsoluteSize.X, 140), height),
-				Position = UDim2.fromOffset(position.X, y),
+				Size = UDim2.fromOffset(width, listHeight),
+				Position = UDim2.fromOffset(position.X, y + if searchable then SEARCH_HEIGHT + 4 else 0),
 				BackgroundColor3 = Theme.DARKER,
 				BorderSizePixel = 0,
 				ScrollBarThickness = 6,

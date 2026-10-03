@@ -9,5 +9,5 @@ dependencies = []
 
 [[package]]
 name = "twistedsignal/prism"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [["vide", "centau/vide@0.4.1"]]

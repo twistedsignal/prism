@@ -71,6 +71,102 @@ class EffectsTests(unittest.TestCase):
             cached = effects.post_process_pixels(pixels, edited, 128, cache, "scene")
         np.testing.assert_array_equal(cached, effects.post_process_pixels(pixels, edited, 128))
 
+    def model(self):
+        pixels = np.zeros((48, 48, 4), dtype=np.float32)
+        pixels[12:36, 12:36] = [0.8, 0.4, 0.1, 1]
+        pixels[18:30, 18:30, :3] = [0.3, 0.6, 0.9]
+        return pixels
+
+    def test_every_new_effect_changes_the_image_and_stays_in_range(self):
+        pixels = self.model()
+        height, width = pixels.shape[:2]
+        normals = np.zeros_like(pixels)
+        normals[..., 2] = 1.0
+        normals[12:36, 12:14, 2] = 0.5
+        depth = np.zeros_like(pixels)
+        depth[..., 0] = np.linspace(0, 1, width)[None, :]
+        depth[18:30, 18:30, 0] = 0.0
+        text = np.zeros((height, width), dtype=np.float32)
+        text[20:28, 10:38] = 1
+        flat = pixels.copy()
+        flat[..., :3] = np.clip(pixels[..., :3] * 1.3, 0, 1)
+        passes = {"normals": normals, "depth": depth, "text": text, "flat": flat}
+        base = effects.post_process_pixels(pixels, schema.normalize({}), 48, passes=passes)
+        cases = [
+            {"colorOverlay": True}, {"celShading": True}, {"heatmap": True},
+            {"heatmap": True, "heatmapSource": "depth"}, {"duotone": True}, {"tritone": True},
+            {"halftone": True}, {"dither": True}, {"pixelate": True}, {"chromaticAberration": True},
+            {"crt": True}, {"bloom": True, "bloomThreshold": 0.2}, {"xray": True}, {"depthTint": True},
+            {"depthOutlineSize": 4}, {"innerShadow": True}, {"vignette": True}, {"text": "Hi"},
+        ]
+        for values in cases:
+            with self.subTest(values=values):
+                output = effects.post_process_pixels(pixels, schema.normalize(values), 48, passes=passes)
+                self.assertEqual(output.shape, pixels.shape)
+                self.assertTrue(np.all(np.isfinite(output)))
+                self.assertGreaterEqual(output.min(), 0)
+                self.assertLessEqual(output.max(), 1)
+                self.assertFalse(np.allclose(output, base), "effect changed nothing")
+
+    def test_text_is_drawn_above_the_color_overlay(self):
+        pixels = self.model()
+        text = np.zeros(pixels.shape[:2], dtype=np.float32)
+        text[24, 24] = 1
+        settings = schema.normalize({
+            "colorOverlay": True, "colorOverlayColor": "#00FF00FF", "text": "x", "textColor": "#FF0000FF",
+            "outlineSize": 0, "dropShadow": False,
+        })
+        output = effects.post_process_pixels(pixels, settings, 48, passes={"text": text})
+        np.testing.assert_allclose(output[24, 24], [1, 0, 0, 1], atol=1e-6)
+        np.testing.assert_allclose(output[14, 14], [0, 1, 0, 1], atol=1e-6)
+
+    def test_overlay_alpha_controls_strength(self):
+        pixels = self.model()
+        settings = schema.normalize({"colorOverlay": True, "colorOverlayColor": "#00000080",
+                                     "outlineSize": 0, "dropShadow": False})
+        output = effects.post_process_pixels(pixels, settings, 48)
+        np.testing.assert_allclose(output[14, 14, :3], np.array([0.8, 0.4, 0.1]) * (1 - 128 / 255), atol=1e-5)
+
+    def test_vignette_covers_the_image_border(self):
+        pixels = np.zeros((32, 32, 4), dtype=np.float32)
+        settings = schema.normalize({"vignette": True, "vignetteStrength": 1, "vignetteOpacity": 1,
+                                     "dropShadow": False})
+        output = effects.post_process_pixels(pixels, settings, 32)
+        self.assertGreater(output[0, 0, 3], 0.9)
+        self.assertLess(output[16, 16, 3], 0.05)
+
+    def test_required_passes(self):
+        self.assertEqual(effects.required_passes(schema.normalize({})), set())
+        self.assertEqual(effects.required_passes(schema.normalize({"xray": True})), {"normals"})
+        self.assertEqual(effects.required_passes(schema.normalize({"heatmap": True})), set())
+        self.assertEqual(effects.required_passes(schema.normalize({"heatmap": True, "heatmapSource": "depth"})), {"depth"})
+        self.assertEqual(effects.required_passes(schema.normalize({"depthOutlineSize": 2})), {"depth"})
+        self.assertEqual(effects.required_passes(schema.normalize({"celShading": True})), {"flat"})
+        self.assertEqual(effects.required_passes(schema.normalize({"text": "  "})), set())
+        self.assertEqual(effects.required_passes(schema.normalize({"text": "Hi", "textColor": "#FFFFFF00"})), set())
+        self.assertEqual(effects.required_passes(schema.normalize({"text": "Hi"})), {"text"})
+
+
+class SchemaTests(unittest.TestCase):
+    def test_new_setting_types_are_validated(self):
+        settings = schema.normalize({
+            "colorOverlayColor": "#abcdef", "textColor": "12345678", "text": "Hi\x07there" + "x" * 200,
+            "heatmapSource": "nope", "textFont": "Fredoka One",
+        })
+        self.assertEqual(settings["colorOverlayColor"], "#ABCDEFFF")
+        self.assertEqual(settings["textColor"], "#12345678")
+        self.assertTrue(settings["text"].startswith("Hithere"))
+        self.assertEqual(len(settings["text"]), 120)
+        self.assertEqual(settings["heatmapSource"], "brightness")
+        self.assertEqual(settings["textFont"], "Fredoka One")
+        self.assertEqual(schema.normalize({"colorOverlayColor": "red"})["colorOverlayColor"], "#FF3B3B80")
+
+    def test_effect_sections_never_rerender_in_blender(self):
+        for key in ("text", "textFont", "xray", "vignetteOpacity", "colorOverlayColor", "saturation", "glow"):
+            self.assertIn(key, schema.EFFECT_KEYS)
+        for key in ("zoom", "cavity", "pitch", "exposure", "subdivision"):
+            self.assertNotIn(key, schema.EFFECT_KEYS)
+
 
 if __name__ == "__main__":
     unittest.main()
