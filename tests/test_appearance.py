@@ -33,6 +33,30 @@ def texel(baked, uv):
 
 
 class AppearanceTests(unittest.TestCase):
+    def test_classic_head_uses_builtin_geometry_and_nonuniform_scale(self):
+        original = scene.head([1, 1, 1])
+        scaled = scene.head([1.25, 2, 0.75])
+        self.assertEqual(len(original), 846 * 3)
+        for (point, uv, normal), (new_point, new_uv, new_normal) in zip(original, scaled):
+            np.testing.assert_allclose(new_point, np.asarray(point) * [1.25, 2, 0.75])
+            self.assertEqual(uv, new_uv)
+            np.testing.assert_allclose(new_normal, np.asarray(normal) / [1.25, 2, 0.75])
+        bounds = np.ptp([point for point, _, _ in scene.head([1.25] * 3)], axis=0)
+        np.testing.assert_allclose(bounds, [1.4973113, 1.5030308, 1.4973113], atol=1e-6)
+
+    def test_classic_head_face_preserves_original_geometry(self):
+        original = scene.head([1.25] * 3)
+        corners, baked = appearance.bake(
+            original, [2, 1, 1], (1, 0, 0), None,
+            [{"id": "face", "face": "Front"}],
+            {"face": texture([[[0, 0, 255, 255]]])},
+        )
+        self.assertEqual([c[0] for c in corners], [c[0] for c in original])
+        self.assertEqual([c[2] for c in corners], [c[2] for c in original])
+        colors = [texel(baked, uv) for _, uv, _ in corners]
+        self.assertIn((0, 0, 255, 255), colors)
+        self.assertIn((255, 0, 0, 255), colors)
+
     def test_clothing_and_face_alpha_preserve_geometry(self):
         template = np.zeros((559, 585, 4), dtype=np.uint8)
         for x, y, w, h in appearance.RECTS["torso"].values():

@@ -3,7 +3,7 @@ const CameraControls = {}
 
 function CameraControls.orbit(settings: { [string]: any }, dx: number, dy: number): { [string]: number }
 	return {
-		cameraRotation = ((settings.cameraRotation or 0) - dx * 0.5 + 180) % 360 - 180,
+		cameraRotation = ((settings.cameraRotation or 0) + dx * 0.5 + 180) % 360 - 180,
 		cameraElevation = math.clamp((settings.cameraElevation or 0) + dy * 0.5, -89, 89),
 	}
 end

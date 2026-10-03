@@ -80,30 +80,45 @@ assert(#store.models() == 1)
 local original = store.models()[1]
 original.settings({ zoom = 2 })
 
-store.useSelection({ second })
+store.useSelection({ first, second })
 drain()
 assert(#store.models() == 2)
 assert(store.models()[1] == original)
 assert(original.settings().zoom == 2)
-assert(store.currentModel().instance == second)
+assert(store.currentModel() == original)
 
 local reads = #serialized
 store.useSelection({ first, first, second })
-store.useSelection({})
 drain()
-assert(#store.models() == 2, "Reselection must not duplicate or clear models")
+assert(#store.models() == 2, "Reselection must not duplicate models")
 assert(#serialized == reads, "Existing models must not be serialized again")
 assert(store.currentModel() == original)
 
--- Adding another selection while serialization yields must not cancel older imports.
+local destroyedThumbnails = 0
+original.thumbnail = { Destroy = function() destroyedThumbnails += 1 end }
+store.useSelection({ second })
+assert(#store.models() == 1 and store.currentModel().instance == second)
+assert(destroyedThumbnails == 1 and original.thumbnail == nil)
+store.useSelection({})
+drain()
+assert(#store.models() == 0 and store.currentModel() == nil, "Deselecting all must clear the menu")
+assert(store.previewImage() == nil and store.previewState() == "idle")
+
+-- Deselecting while serialization yields must discard the stale result.
 local fourth = { Name = "Fourth" }
 duringSerialize = function() store.useSelection({ fourth }) end
 store.useSelection({ third })
 drain()
-assert(#store.models() == 4)
-assert(store.models()[3].state() == "sending")
-assert(store.models()[4].state() == "sending")
+assert(#store.models() == 1 and store.currentModel().instance == fourth)
+assert(store.currentModel().state() == "sending")
 assert(table.find(serialized, third) and table.find(serialized, fourth))
+
+-- A stale item must not prevent a retained item in the same import from loading.
+store.useSelection({ first, second })
+store.useSelection({ second })
+drain()
+assert(#store.models() == 1 and store.currentModel().instance == second)
+assert(store.currentModel().state() == "sending")
 
 store.mode("this")
 store.setCamera({ cameraRotation = 42, cameraElevation = 20, zoom = 1.4, ignored = 99 })
@@ -116,7 +131,7 @@ for _, model in store.models() do
 end
 store.destroy()
 store.useSelection({ { Name = "After cleanup" } })
-assert(#store.models() == 4, "Disposed stores must ignore selection events")
+assert(#store.models() == 1, "Disposed stores must ignore selection events")
 local sceneRequests = 0
 local incomplete = true
 local retryStore = storeModule.create({}, {

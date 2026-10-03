@@ -140,6 +140,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end
 		model.state("sending")
 		const response = bridge.request("POST", "/scenes", payload)
+		if destroyed or not table.find(models(), model) then
+			return false
+		end
 		if not response.ok then
 			model.state("error")
 			model.warning(response.error or "Could not send the model to Prism")
@@ -196,6 +199,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 				end
 				previewState("rendering")
 				const response = render(model, nil, "preview")
+				if destroyed or model ~= currentModel() then
+					continue
+				end
 				if response == nil then
 					previewState("error")
 					previewError(model.warning())
@@ -233,7 +239,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 					continue
 				end
 				const response = render(model, THUMBNAIL_SIZE, `thumb:{model.id}`)
-				if response and response.ok then
+				if not destroyed and table.find(models(), model) and response and response.ok then
 					model.thumbnail = writeImage(model.thumbnail, response.body)
 					model.thumbnailVersion(model.thumbnailVersion() + 1)
 				end
@@ -246,7 +252,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		thumbnailTokens[model.id] = (thumbnailTokens[model.id] or 0) + 1
 		const token = thumbnailTokens[model.id]
 		task.delay(THUMBNAIL_DELAY, function()
-			if thumbnailTokens[model.id] ~= token or table.find(thumbnailQueue, model) then
+			if destroyed or not table.find(models(), model) or thumbnailTokens[model.id] ~= token or table.find(thumbnailQueue, model) then
 				return
 			end
 			table.insert(thumbnailQueue, model)
@@ -262,6 +268,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		for _, model in list do
 			payloads[model.id] = nil
 			recoveryNeeded[model.id] = nil
+			thumbnailTokens[model.id] = nil
 			if model.thumbnail then
 				model.thumbnail:Destroy()
 				model.thumbnail = nil
@@ -270,11 +277,21 @@ const function create(plugin: Plugin, bridge: Bridge)
 	end
 
 	const function useSelection(roots: { Instance })
-		if destroyed or #roots == 0 then
+		if destroyed then
 			return
 		end
 		const initial = defaults()
-		const list = table.clone(models())
+		const previous = currentModel()
+		const chosen = {}
+		for _, root in roots do
+			chosen[root] = true
+		end
+		const list: { Types.Model } = {}
+		const removed: { Types.Model } = {}
+		for _, model in models() do
+			table.insert(if chosen[model.instance] then list else removed, model)
+		end
+		destroyModels(removed)
 		const added: { Types.Model } = {}
 		const retry: { Types.Model } = {}
 		local firstSelected: number? = nil
@@ -310,12 +327,19 @@ const function create(plugin: Plugin, bridge: Bridge)
 			table.insert(added, model)
 			firstSelected = firstSelected or #list
 		end
-		if #added > 0 then
+		if #added > 0 or #removed > 0 then
 			models(list)
 		end
-		if firstSelected and firstSelected ~= selected() then
-			selected(firstSelected)
+		selected(firstSelected or 1)
+		if previous ~= currentModel() then
 			activePreset(nil)
+			if previewImage then
+				previewImage:Destroy()
+				previewImage = nil
+			end
+			previewVersion(previewVersion() + 1)
+			previewState("idle")
+			previewError(nil)
 			requestPreview()
 		end
 		if #added == 0 and #retry == 0 then
@@ -324,7 +348,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 
 		task.spawn(function()
 			for _, model in retry do
-				if not destroyed and bridge.connected() and sendScene(model) then
+				if not destroyed and table.find(models(), model) and bridge.connected() and sendScene(model) then
 					if model == currentModel() then
 						requestPreview()
 					end
@@ -333,11 +357,11 @@ const function create(plugin: Plugin, bridge: Bridge)
 			end
 			for _, model in added do
 				if destroyed or not table.find(models(), model) then
-					return
+					continue
 				end
 				const ok, result = pcall(Serializer.serialize, model.instance)
 				if destroyed or not table.find(models(), model) then
-					return
+					continue
 				end
 				if not ok then
 					model.state("error")

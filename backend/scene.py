@@ -5,7 +5,7 @@ Payload (all coordinates are Roblox studs, Y up, relative to the model pivot):
     {
       "name": "Sword",
       "parts": [{
-        "kind": "block" | "wedge" | "cornerWedge" | "cylinder" | "ball" | "mesh",
+        "kind": "block" | "wedge" | "cornerWedge" | "cylinder" | "ball" | "head" | "mesh",
         "cframe": [x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22],
         "size": [x, y, z],
         "color": "#RRGGBB",
@@ -32,6 +32,7 @@ import sys
 import uuid
 import zlib
 from array import array
+from functools import lru_cache
 from pathlib import Path
 
 import schema
@@ -252,12 +253,24 @@ def ball(size):
     return corners
 
 
+@lru_cache(maxsize=1)
+def head_mesh():
+    import mesh_asset
+
+    return mesh_asset.decode((Path(__file__).parent / "primitives" / "head.mesh").read_bytes())
+
+
+def head(size):
+    return mesh_corners({**head_mesh(), "scale": size, "center": False})
+
+
 PRIMITIVES = {
     "block": block,
     "wedge": wedge,
     "cornerWedge": corner_wedge,
     "cylinder": cylinder,
     "ball": ball,
+    "head": head,
 }
 
 

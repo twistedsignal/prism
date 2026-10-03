@@ -47,3 +47,23 @@ assert(editableCalls == 2, 'Owned assets must still try both editable APIs')
 serializer.serialize(part)
 assert(editableCalls == 2, 'Failed editable reads must be remembered')
 print('Ownership routing and failed-read cache checks passed')
+
+-- Built-in Head meshes must retain their own geometry, scale and offset.
+local specialMesh = {
+    MeshType = 'Head', Scale = roblox.Vector3.new(1.25, 2, 0.75),
+    Offset = roblox.Vector3.new(0.25, 0.5, -0.25),
+}
+part.Name = 'Head'
+part.Size = roblox.Vector3.new(2, 1, 1)
+part.IsA = function(_, class) return class == 'BasePart' or class == 'Part' or class == 'PVInstance' end
+part.FindFirstChildWhichIsA = function(_, class) return if class == 'SpecialMesh' then specialMesh else nil end
+local head = serializer.serialize(part).payload.parts[1]
+assert(head.kind == 'head', 'MeshType.Head must never become a sphere')
+assert(head.size[1] == 1.25 and head.size[2] == 2 and head.size[3] == 0.75)
+assert(head.cframe[1] == 0.25 and head.cframe[2] == 0.5 and head.cframe[3] == -0.25)
+specialMesh.MeshType = 'Sphere'
+assert(serializer.serialize(part).payload.parts[1].kind == 'ball')
+part.FindFirstChildWhichIsA = function() return nil end
+part.Shape = 'Block'
+assert(serializer.serialize(part).payload.parts[1].kind == 'block', 'A part named Head must retain its actual shape')
+print('Built-in head shape, scale and offset checks passed')
