@@ -351,7 +351,9 @@ def prepare_materials(objects, roblox_export=False):
             emission = principled.inputs.get("Emission Color") if principled is not None else None
             for link in (emission.links if emission is not None else ()):
                 if link.from_node.type == "TEX_IMAGE" and link.from_node.image is not None:
-                    state["detail"] = link.from_node
+                    state["detail"] = link.from_node.image
+                    # The node may be removed below; keep its image until the model unloads.
+                    state["detail"].use_fake_user = True
                     print(f"  Material detail: {link.from_node.image.name}")
 
             nodes = material.node_tree.nodes
@@ -360,6 +362,10 @@ def prepare_materials(objects, roblox_export=False):
             # Do not pick a normal, roughness, or emission map as base color.
             nodes.active = None
             if image_node is None:
+                # With no active image, Workbench colors the material from its first
+                # image node, so a grayscale detail map would replace the part color.
+                for node in [node for node in nodes if node.type == "TEX_IMAGE"]:
+                    nodes.remove(node)
                 print("  No diffuse texture. Using material color.")
                 continue
 
@@ -978,15 +984,12 @@ def render_detail(path, states):
             if not material.use_nodes:
                 continue
             nodes = material.node_tree.nodes
-            restore.append((material, nodes.active, material.diffuse_color[:]))
-            if state["detail"] is not None:
-                nodes.active = state["detail"]
-            else:
-                node = state.get("white")
-                if node is None:
-                    node = state["white"] = nodes.new("ShaderNodeTexImage")
-                    node.image = white
-                nodes.active = node
+            # A temporary node: one left behind would color later renders, since
+            # Workbench uses the first image node of materials with no active one.
+            node = nodes.new("ShaderNodeTexImage")
+            node.image = state["detail"] or white
+            restore.append((material, nodes.active, material.diffuse_color[:], node))
+            nodes.active = node
             # Workbench multiplies texture alpha by the material's; keep coverage unchanged.
             material.diffuse_color = (1.0, 1.0, 1.0, material.diffuse_color[3])
         shading.light = "FLAT"
@@ -998,7 +1001,8 @@ def render_detail(path, states):
         scene.render.filepath = str(path)
         bpy.ops.render.render(write_still=True)
     finally:
-        for material, active, color in restore:
+        for material, active, color, node in restore:
+            material.node_tree.nodes.remove(node)
             material.node_tree.nodes.active = active
             material.diffuse_color = color
         for name, value in saved.items():
@@ -1391,6 +1395,9 @@ class Renderer:
     def unload(self, key):
         model = self.models.pop(key, None)
         if model is not None:
+            for state in model["materials"]:
+                if state["detail"] is not None:
+                    state["detail"].use_fake_user = False
             self.remove_collection(model["collection"])
             del model
             memory.release()

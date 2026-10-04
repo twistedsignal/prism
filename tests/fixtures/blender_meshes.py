@@ -74,4 +74,17 @@ with tempfile.TemporaryDirectory() as temporary:
     assert np.any(visible[:, 0] > visible[:, 2] * 2), "Union lost its red face"
     assert np.any(visible[:, 2] > visible[:, 0] * 2), "Union lost its blue face"
     assert visible[:, 1].max() < 0.1, "Part color replaced stored Union colors"
+
+    # Workbench colors a material without an active image from its first image
+    # node, so material detail maps used to turn the whole render grayscale.
+    parts = [{"kind": "block", "cframe": [x, 0, 0, *IDENTITY[3:]], "size": [2, 2, 2], "color": color,
+              **({"material": {"name": "Wood"}} if wood else {})}
+             for x, color, wood in ((-1.1, "#FF0000", False), (1.1, "#0000FF", True))]
+    scene.build({"parts": parts}, directory / "mixed")
+    key = engine.load(directory / "mixed" / "model.obj")
+    for settings in ({}, {"cameraRotation": 30}):
+        result = engine.render(key, settings, 128, "8")
+        visible = result[..., :3][result[..., 3] > 0.99]
+        assert np.any(visible[:, 0] > visible[:, 2] + 0.3), "Plastic part lost its color"
+        assert np.any(visible[:, 2] > visible[:, 0] + 0.3), "Wood part lost its color"
     print("Blender mesh texture and Union color checks passed")

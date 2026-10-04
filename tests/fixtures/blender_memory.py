@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory() as directory:
         keys.append(key)
         model = engine.models[key]
         assert all(state["detail"] is not None for state in model["materials"])
-        detail_images = {state["detail"].image.as_pointer() for state in model["materials"]}
+        detail_images = {state["detail"].as_pointer() for state in model["materials"]}
         assert len(detail_images) == 1, "Part colors duplicated the material image"
         pixels = engine.render(key, {}, 128, "8")
         assert np.ptp(pixels[..., :3]) > 0.1

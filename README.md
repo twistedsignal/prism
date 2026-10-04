@@ -30,6 +30,8 @@ irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1 | iex
 2. Adjust the camera and settings. Drag the preview to orbit, scroll to zoom, or drag over text in the Blender preview to move it. Studio text follows your mouse, then the Blender render replaces it. Choose **This model** or **All** to set the editing scope.
 3. Click **Render** to save PNGs to your output folder. Click **Upload** to send them to Roblox as Decals. Prism shows the image IDs you can use in `ImageLabel.Image`.
 
+To pick models by path instead, open the **Select** tab and type a glob such as `ReplicatedStorage/Content/**/Model`. Use `/` between names, `*` and `?` inside a name, `**` for any depth, `[abc]` for character sets and `{Sword,Shield}` for alternatives. Matching ignores case, and `\` escapes a literal `/` or `*` in a name. Suggestions follow your typing like a code editor: press Tab or → to accept, or ↑ ↓ to choose another. Filter matches to Models, Parts, Folders or anything Prism can render, then click **Select** to replace the Studio selection or **Add** to extend it. Nested matches collapse into their outermost match, and a trailing `**` matches what is inside a folder, not the folder itself.
+
 The plugin has outlines, shadows, glow, color and depth effects, and text. Presets are saved locally. Prism also remembers a model's settings when you deselect and reselect it.
 
 Slow renders show the current render step, completed/total steps, and elapsed time in the preview after three seconds. Agent jobs expose the same progress, and waiting CLI commands print updates to stderr every three seconds. These are completed render steps, not estimated Blender samples.
