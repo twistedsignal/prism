@@ -79,7 +79,8 @@ const function helpText(): string
 	table.insert(lines, "• Ctrl+Z undoes an insert.")
 	table.insert(lines, "")
 	table.insert(lines, "<b>Copying</b>")
-	table.insert(lines, "Studio doesn't let plugins use the clipboard. Click an output box to select all of it, then press Ctrl+C.")
+	table.insert(lines, "<b>Copy</b> puts the output on your clipboard through the Prism backend. You can also click an output box "
+		.. "to select all of it, then press Ctrl+C.")
 	table.insert(lines, "")
 	table.insert(lines, "<b>Example</b>")
 	table.insert(lines, code('{RENDER_NAME|key} = "{ASSET_URI}",'))

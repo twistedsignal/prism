@@ -385,6 +385,16 @@ def make_handler(bridge):
             platform_open.open_folder(folder)
             return 200, {"folder": folder}
 
+        def clipboard(self):
+            text = self.read_json().get("text")
+            if not isinstance(text, str):
+                raise HttpError(400, "text must be a string")
+            try:
+                platform_open.copy_text(text)
+            except platform_open.ClipboardError as error:
+                raise HttpError(500, str(error)) from error
+            return 200, {"copied": len(text)}
+
         def pick_folder(self):
             current = bridge.store.get_config()["outputFolder"]
             chosen = platform_open.pick_folder(current)
@@ -418,6 +428,7 @@ def make_handler(bridge):
         ("POST", "/restart"): Handler.restart,
         ("POST", "/open-folder"): Handler.open_folder,
         ("POST", "/pick-folder"): Handler.pick_folder,
+        ("POST", "/clipboard"): Handler.clipboard,
     }
     return Handler
 

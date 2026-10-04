@@ -1122,6 +1122,19 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end)
 	end
 
+	-- the backend runs on this machine, so it can reach the clipboard plugins can't.
+	const function copyText(text: string, onDone: ((boolean) -> ())?)
+		task.spawn(function()
+			const response = bridge.request("POST", "/clipboard", { text = text })
+			if not response.ok then
+				setNotice(response.error or "Could not copy to the clipboard", "error")
+			end
+			if onDone then
+				onDone(response.ok)
+			end
+		end)
+	end
+
 	const function openFolder()
 		task.spawn(function()
 			const response = bridge.request("POST", "/open-folder")
@@ -1274,6 +1287,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 		exportModels = exportModels,
 		uploadModels = uploadModels,
 		openFolder = openFolder,
+		copyText = copyText,
 		requestPreview = requestPreview,
 		setNotice = setNotice,
 		reload = function()

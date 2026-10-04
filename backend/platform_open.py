@@ -1,4 +1,4 @@
-"""Open folders in the user's file manager and show a native folder picker."""
+"""Open folders in the user's file manager, show a native folder picker and copy to the clipboard."""
 
 import os
 import shutil
@@ -68,3 +68,38 @@ def pick_folder(initial):
         return None
     chosen = result.stdout.strip()
     return chosen if result.returncode == 0 and chosen else None
+
+
+class ClipboardError(RuntimeError):
+    pass
+
+
+def clipboard_command(env):
+    """The command that reads text on stdin into the system clipboard, and its encoding."""
+    if sys.platform == "win32":
+        # clip reads UTF-16 with a byte order mark as Unicode.
+        return ["clip"], "utf-16"
+    if sys.platform == "darwin":
+        return ["pbcopy"], "utf-8"
+    if env.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+        return ["wl-copy"], "utf-8"
+    if shutil.which("xclip"):
+        return ["xclip", "-selection", "clipboard"], "utf-8"
+    if shutil.which("xsel"):
+        return ["xsel", "--clipboard", "--input"], "utf-8"
+    raise ClipboardError("No clipboard tool found. Install wl-clipboard (Wayland) or xclip (X11).")
+
+
+def copy_text(text):
+    env = session_environment()
+    if sys.platform == "darwin":
+        env.setdefault("LC_CTYPE", "UTF-8")  # pbcopy reads ASCII without a UTF-8 locale.
+    command, encoding = clipboard_command(env)
+    try:
+        # wl-copy and xclip keep running to serve the clipboard, so never wait on their output.
+        result = subprocess.run(command, input=text.encode(encoding), stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, timeout=10, env=env)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ClipboardError(f"Could not run {command[0]}: {error}") from error
+    if result.returncode != 0:
+        raise ClipboardError(f"{command[0]} exited with code {result.returncode}")

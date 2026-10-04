@@ -9,6 +9,9 @@ const Template = require("../Template")
 const Store = require("../Store")
 
 const new = vide.create
+const source = vide.source
+
+const COPIED_TIME = 1.5
 
 export type Props = {
 	store: Store.Store,
@@ -20,6 +23,8 @@ export type Props = {
 
 const function TemplateOutput(props: Props): Frame
 	const store = props.store
+	const copied = source(false)
+	local copyToken = 0
 	const output = function(): (string, { string })
 		const template = store.currentTemplate()
 		if template == nil then
@@ -71,7 +76,7 @@ const function TemplateOutput(props: Props): Frame
 		new("TextLabel")({
 			AnchorPoint = Vector2.new(0, 1),
 			Position = UDim2.fromScale(0, 1),
-			Size = UDim2.new(1, -150, 0, 30),
+			Size = UDim2.new(1, -252, 0, 30),
 			BackgroundTransparency = 1,
 			Text = function()
 				const _, warnings = output()
@@ -80,7 +85,7 @@ const function TemplateOutput(props: Props): Frame
 				end
 				const template = store.currentTemplate()
 				const target = if template and template.target and template.target ~= "" then template.target else nil
-				return if target then `Click the code, then Ctrl+C. Insert writes to {target}.` else "Click the code, then Ctrl+C. Insert writes to the selected script."
+				return if target then `Insert writes to {target}.` else "Insert writes to the selected script."
 			end,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
@@ -90,6 +95,33 @@ const function TemplateOutput(props: Props): Frame
 			end,
 			Font = Enum.Font.SourceSans,
 			TextSize = 14,
+		}),
+		Button({
+			text = function()
+				return if copied() then "Copied" else "Copy"
+			end,
+			anchorPoint = Vector2.new(1, 1),
+			position = UDim2.new(1, -148, 1, 0),
+			size = UDim2.fromOffset(94, 30),
+			enabled = function()
+				return store.currentTemplate() ~= nil and #props.entries > 0
+			end,
+			activated = function()
+				const text = output()
+				store.copyText(text, function(ok)
+					if not ok then
+						return
+					end
+					copyToken += 1
+					const token = copyToken
+					copied(true)
+					task.delay(COPIED_TIME, function()
+						if token == copyToken then
+							copied(false)
+						end
+					end)
+				end)
+			end,
 		}),
 		Button({
 			text = "Insert into script",
