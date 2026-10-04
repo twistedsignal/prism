@@ -78,7 +78,6 @@ const function text(props: {
 	bold: boolean?,
 	textSize: number?,
 	alignment: Enum.TextXAlignment?,
-	wrapped: boolean?,
 	zIndex: number?,
 }): TextLabel
 	return new("TextLabel")({
@@ -87,9 +86,7 @@ const function text(props: {
 		BackgroundTransparency = 1,
 		Text = props.text,
 		TextXAlignment = props.alignment or Enum.TextXAlignment.Left,
-		TextYAlignment = if props.wrapped then Enum.TextYAlignment.Top else Enum.TextYAlignment.Center,
-		TextTruncate = if props.wrapped then Enum.TextTruncate.None else Enum.TextTruncate.AtEnd,
-		TextWrapped = props.wrapped,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		TextColor3 = props.color or Theme.MUTED,
 		Font = if props.bold then Enum.Font.SourceSansBold else Enum.Font.SourceSans,
 		TextSize = props.textSize or 15,
@@ -248,7 +245,7 @@ const function SelectPage(props: Props): Frame
 
 	const field = new("Frame")({
 		Name = "PathField",
-		Position = UDim2.fromOffset(0, 58),
+		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.new(1, 0, 0, BOX_HEIGHT),
 		BackgroundColor3 = Theme.INPUT,
 		BorderSizePixel = 0,
@@ -292,7 +289,7 @@ const function SelectPage(props: Props): Frame
 
 	const list = new("ScrollingFrame")({
 		Name = "Suggestions",
-		Position = UDim2.fromOffset(0, 58 + BOX_HEIGHT + 2),
+		Position = UDim2.fromOffset(0, BOX_HEIGHT + 2),
 		Size = function()
 			return UDim2.new(1, 0, 0, math.min(#items(), VISIBLE_SUGGESTIONS) * SUGGESTION_HEIGHT)
 		end,
@@ -428,40 +425,24 @@ const function SelectPage(props: Props): Frame
 			PaddingLeft = UDim.new(0, PADDING),
 			PaddingRight = UDim.new(0, PADDING),
 		}),
-		text({
-			text = "Find instances by path",
-			size = UDim2.new(1, 0, 0, 20),
-			color = Theme.TEXT,
-			bold = true,
-			textSize = 16,
-		}),
-		text({
-			text = "Use / between names, * inside a name, ** for any depth and {a,b} for either name. "
-				.. "Tab accepts the highlighted suggestion; click any other to use it.",
-			position = UDim2.fromOffset(0, 22),
-			size = UDim2.new(1, 0, 0, 32),
-			color = Theme.SUBTLE,
-			textSize = 14,
-			wrapped = true,
-		}),
 		field,
 		Segmented({
 			options = filterLabels,
 			selected = props.filter,
 			onSelect = props.filter,
-			position = UDim2.fromOffset(0, 58 + BOX_HEIGHT + 10),
+			position = UDim2.fromOffset(0, BOX_HEIGHT + 10),
 			size = UDim2.new(1, 0, 0, 26),
 		}),
 		text({
 			text = status,
-			position = UDim2.fromOffset(0, 58 + BOX_HEIGHT + 46),
+			position = UDim2.fromOffset(0, BOX_HEIGHT + 46),
 			size = UDim2.new(1, -196, 0, 30),
 			color = Theme.MUTED,
 		}),
 		Button({
 			text = "Add",
 			anchorPoint = Vector2.new(1, 0),
-			position = UDim2.new(1, -112, 0, 58 + BOX_HEIGHT + 46),
+			position = UDim2.new(1, -112, 0, BOX_HEIGHT + 46),
 			size = UDim2.fromOffset(76, 30),
 			enabled = function()
 				return count() > 0 and not searching()
@@ -476,7 +457,7 @@ const function SelectPage(props: Props): Frame
 			end,
 			variant = "accent",
 			anchorPoint = Vector2.new(1, 0),
-			position = UDim2.new(1, 0, 0, 58 + BOX_HEIGHT + 46),
+			position = UDim2.new(1, 0, 0, BOX_HEIGHT + 46),
 			size = UDim2.fromOffset(104, 30),
 			enabled = function()
 				return count() > 0 and not searching()
@@ -487,8 +468,8 @@ const function SelectPage(props: Props): Frame
 		}),
 		new("ScrollingFrame")({
 			Name = "Matches",
-			Position = UDim2.fromOffset(0, 58 + BOX_HEIGHT + 86),
-			Size = UDim2.new(1, 0, 1, -(58 + BOX_HEIGHT + 86)),
+			Position = UDim2.fromOffset(0, BOX_HEIGHT + 86),
+			Size = UDim2.new(1, 0, 1, -(BOX_HEIGHT + 86)),
 			BackgroundColor3 = Theme.GROUP,
 			BorderSizePixel = 0,
 			ScrollBarThickness = 6,

@@ -1,21 +1,32 @@
--- glob matching and autocomplete over instance paths such as "ReplicatedStorage/Content/**/Model".
--- "/" separates names. "*" and "?" match within a name, "**" spans any number of levels,
--- "[abc]", "[!abc]" and "{a,b}" work as in shell globs. matching ignores case.
--- "\" escapes the next character, so names containing "/" or "*" stay reachable.
+-- .gitignore-style patterns over instance paths, such as "ReplicatedStorage/Assets/Models/**".
+-- follows gitignore's rules: "/" separates names; "*" and "?" match within a name and
+-- "[a-z]" / "[!a-z]" match one character from a set. "**/" matches any depth, "/**" everything
+-- inside, and "a/**/b" zero or more levels between. a pattern with no slash, or only a trailing
+-- one, matches at any depth; a leading or middle slash anchors it to the DataModel (a leading
+-- "game/" works too). a trailing "/" matches only instances with children. matching is
+-- case-sensitive, and "\" escapes the next character, so names containing "/" or "*" stay reachable.
 
 -- every N instances visited, long searches call options.yield.
 const YIELD_EVERY = 2000
 const MAX_PARENTS = 2000
-const SPECIAL = "[\\/%*%?%[%]{}]"
+const SPECIAL = "[\\/%*%?%[%]]"
 const LUA_MAGIC = "[%^%$%(%)%%%.%[%]%*%+%-%?]"
 
-export type Segment = { globstar: boolean, patterns: { string } }
+export type Segment = { globstar: boolean, pattern: string }
+
+export type Pattern = {
+	segments: { Segment },
+	-- a trailing "/" matches only instances with children, as gitignore matches directories.
+	containersOnly: boolean,
+}
 
 export type Options = {
 	limit: number?,
 	filter: ((Instance) -> boolean)?,
 	-- return false to cancel; match() then returns nil.
 	yield: (() -> boolean)?,
+	-- root the pattern even without a slash.
+	anchored: boolean?,
 }
 
 export type Suggestion = {
@@ -73,51 +84,11 @@ const function split(text: string): { string }
 	return parts
 end
 
--- "{a,b}c" becomes { "ac", "bc" }, including nested and repeated groups.
-const function expandBraces(text: string): { string }
-	local depth, open = 0, nil :: number?
-	const commas = {}
-	local index = 1
-	while index <= #text do
-		const char = string.sub(text, index, index)
-		if char == "\\" then
-			index += 2
-			continue
-		end
-		if char == "{" then
-			depth += 1
-			if depth == 1 then
-				open = index
-				table.clear(commas)
-			end
-		elseif char == "}" and depth > 0 then
-			depth -= 1
-			if depth == 0 and open and #commas > 0 then
-				const before, after = string.sub(text, 1, open - 1), string.sub(text, index + 1)
-				const results = {}
-				local start = open + 1
-				table.insert(commas, index)
-				for _, stop in commas do
-					for _, tail in expandBraces(before .. string.sub(text, start, stop - 1) .. after) do
-						table.insert(results, tail)
-					end
-					start = stop + 1
-				end
-				return results
-			end
-		elseif char == "," and depth == 1 then
-			table.insert(commas, index)
-		end
-		index += 1
-	end
-	return { text }
-end
-
 const function literal(char: string): string
-	return (string.gsub(string.lower(char), LUA_MAGIC, "%%%0"))
+	return (string.gsub(char, LUA_MAGIC, "%%%0"))
 end
 
--- one glob alternative to an anchored, lowercase Lua pattern.
+-- one name glob to an anchored Lua pattern.
 const function compile(glob: string): string
 	const out = { "^" }
 	local index = 1
@@ -127,7 +98,7 @@ const function compile(glob: string): string
 			table.insert(out, literal(string.sub(glob, index + 1, index + 1)))
 			index += 2
 		elseif char == "*" then
-			-- "**" inside a name behaves like "*".
+			-- as in gitignore, "**" inside a name is an ordinary "*".
 			while string.sub(glob, index + 1, index + 1) == "*" do
 				index += 1
 			end
@@ -146,7 +117,7 @@ const function compile(glob: string): string
 				body = string.sub(body, 2)
 			end
 			-- keep "a-z" ranges; escape everything else Lua treats specially.
-			body = string.gsub(string.lower(body), "[%^%]%[%%]", "%%%0")
+			body = string.gsub(body, "[%^%]%[%%]", "%%%0")
 			table.insert(out, `[{negate}{body}]`)
 			index = close + 1
 		else
@@ -160,25 +131,34 @@ end
 
 const function hasGlob(text: string): boolean
 	const stripped = string.gsub(text, "\\.", "")
-	return string.find(stripped, "[%*%?%[{]") ~= nil
+	return string.find(stripped, "[%*%?%[]") ~= nil
 end
 
 const function compileSegment(raw: string): Segment
 	if raw == "**" then
-		return { globstar = true, patterns = {} }
+		return { globstar = true, pattern = "" }
 	end
-	const patterns = {}
-	for _, alternative in expandBraces(raw) do
-		table.insert(patterns, compile(alternative))
-	end
-	return { globstar = false, patterns = patterns }
+	return { globstar = false, pattern = compile(raw) }
 end
 
--- empty segments are ignored, and a leading "game" names the DataModel itself.
-const function parse(text: string): { Segment }
+-- anchored: treat the pattern as rooted even without a slash, as completion's parent path is.
+const function parse(text: string, anchored: boolean?): Pattern
+	-- gitignore drops trailing spaces unless they are escaped.
+	while string.match(text, "%s$") and not string.match(text, "\\%s$") do
+		text = string.sub(text, 1, -2)
+	end
 	const raw = split(text)
-	if #raw > 1 and string.lower(raw[1]) == "game" then
+	if #raw > 1 and raw[1] == "game" then
 		table.remove(raw, 1)
+		anchored = true
+	end
+	const containersOnly = #raw > 1 and raw[#raw] == ""
+	if containersOnly then
+		table.remove(raw)
+	end
+	-- a leading or middle slash anchors the pattern to the root.
+	if #raw > 1 then
+		anchored = true
 	end
 	const segments = {}
 	for _, part in raw do
@@ -186,21 +166,21 @@ const function parse(text: string): { Segment }
 			table.insert(segments, compileSegment(part))
 		end
 	end
+	if #segments == 0 then
+		return { segments = segments, containersOnly = false }
+	end
+	if not anchored and not segments[1].globstar then
+		table.insert(segments, 1, compileSegment("**"))
+	end
 	-- "Folder/**" means everything inside the folder, not the folder too.
-	if #segments > 0 and segments[#segments].globstar then
+	if segments[#segments].globstar then
 		table.insert(segments, compileSegment("*"))
 	end
-	return segments
+	return { segments = segments, containersOnly = containersOnly }
 end
 
 const function nameMatches(segment: Segment, name: string): boolean
-	const lowered = string.lower(name)
-	for _, pattern in segment.patterns do
-		if string.find(lowered, pattern) then
-			return true
-		end
-	end
-	return false
+	return string.find(name, segment.pattern) ~= nil
 end
 
 const function children(instance: Instance): { Instance }
@@ -229,7 +209,8 @@ end
 const function match(root: Instance, pattern: string, options: Options?): ({ Instance }?, boolean)
 	const opts: Options = options or {}
 	const limit = opts.limit or math.huge
-	const segments = parse(pattern)
+	const parsed = parse(pattern, opts.anchored)
+	const segments = parsed.segments
 	const results = {}
 	if #segments == 0 then
 		return results, false
@@ -245,7 +226,12 @@ const function match(root: Instance, pattern: string, options: Options?): ({ Ins
 		if opts.yield and visits % YIELD_EVERY == 0 and not opts.yield() then
 			return nil, false
 		end
-		if instance ~= root and table.find(states, #segments + 1) and (not opts.filter or opts.filter(instance)) then
+		if
+			instance ~= root
+			and table.find(states, #segments + 1)
+			and (not parsed.containersOnly or #children(instance) > 0)
+			and (not opts.filter or opts.filter(instance))
+		then
 			table.insert(results, instance)
 			if #results >= limit then
 				return results, true
@@ -304,8 +290,9 @@ const function complete(root: Instance, text: string, limit: number?, yield: (()
 	const head, partial = string.sub(text, 1, slash), string.sub(text, slash + 1)
 
 	local parents: { Instance } = { root }
-	if #parse(head) > 0 then
-		const matched = match(root, head, { limit = MAX_PARENTS, yield = yield })
+	-- the parent path is rooted: once a name follows its slash, the slash sits mid-pattern.
+	if #parse(head, true).segments > 0 then
+		const matched = match(root, head, { limit = MAX_PARENTS, yield = yield, anchored = true })
 		if matched == nil then
 			return nil
 		end

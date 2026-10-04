@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import config
+import material_assets
 import mesh_asset
 import uploader
 
@@ -395,7 +396,16 @@ class Resolver:
             payload["textures"] = {}
         textures = payload["textures"]
         mesh_results, texture_results, failures = {}, {}, {}
+        legacy = payload.get("legacyMaterials") is True
         for part in payload.get("parts", []):
+            material = part.get("material")
+            if isinstance(material, dict) and not material.get("texture") and not part.get("texture"):
+                # Built-in materials use Roblox's own texture, downloaded like a variant's ColorMap.
+                builtin = material_assets.texture(material.get("name"), legacy)
+                if builtin:
+                    material["texture"] = {"assetId": builtin[0], "mode": "overlay", "builtIn": True,
+                                           "gain": builtin[2]}
+                    material["studsPerTile"] = builtin[1]
             mesh = part.get("mesh") or {}
             identifier = mesh.get("assetId")
             if identifier and not mesh.get("positions"):
@@ -437,7 +447,13 @@ class Resolver:
                 except (AssetError, OSError, ValueError, RuntimeError) as error:
                     (self.root / identifier).unlink(missing_ok=True)
                     failures[identifier] = str(error)
-                    if kind == "material":
+                    if kind == "material" and texture.get("builtIn"):
+                        # Prism's generated texture stands in until the download works.
+                        warnings.append(f"Roblox's {part['material'].get('name')} material texture: {error}; "
+                                        "using an approximation")
+                        part["material"].pop("texture", None)
+                        part["material"].pop("studsPerTile", None)
+                    elif kind == "material":
                         # Fall back to the variant's base material texture.
                         warnings.append(f"MaterialVariant texture {identifier}: {error}; using the base material")
                         part["material"].pop("texture", None)

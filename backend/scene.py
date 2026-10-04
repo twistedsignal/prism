@@ -154,7 +154,22 @@ def material_texture(part, textures, legacy=False):
     studs = material.get("studsPerTile")
     if isinstance(reference, dict) and reference.get("id") in textures:
         spacing = float(studs) if isinstance(studs, (int, float)) and math.isfinite(studs) and studs > 0 else 4.0
-        return reference["id"], spacing
+        gain = reference.get("gain", 1.0)
+        gain = float(gain) if isinstance(gain, (int, float)) and math.isfinite(gain) and gain > 0 else 1.0
+        key = f"opaque:{gain:g}:{reference['id']}"
+        if key not in textures:
+            import numpy as np
+
+            # Roblox ignores material ColorMap alpha; transparent texels would cut holes.
+            width, height, pixels = decode_texture(textures[reference["id"]])
+            data = np.frombuffer(pixels, dtype=np.uint8).reshape(-1, 4).copy()
+            if gain != 1.0:
+                # The gain is linear light; texels are display-encoded, as the renderer multiplies them.
+                data[:, :3] = np.clip(data[:, :3] * gain ** (1 / 2.2) + 0.5, 0, 255).astype(np.uint8)
+            data[:, 3] = 255
+            textures[key] = {"width": width, "height": height,
+                             "pixels": base64.b64encode(data.tobytes()).decode("ascii")}
+        return key, spacing
     name = material.get("name")
     if isinstance(name, str) and roblox_materials.has_texture(name):
         legacy = roblox_materials.is_legacy(name, legacy)
@@ -568,7 +583,7 @@ class SceneCache:
         # Resolved bytes change the ID after credential repair, invalidating renderer objects.
         # Bump the prefix when generated textures change, so cached scenes rebuild.
         resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        identifier = scene_id(b"appearance-v10:" + resolved)
+        identifier = scene_id(b"appearance-v11:" + resolved)
         if incomplete:
             identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier

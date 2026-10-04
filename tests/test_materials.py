@@ -10,6 +10,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 import assets
+import material_assets
 import materials
 import scene
 
@@ -138,6 +139,71 @@ class SceneMaterialTests(unittest.TestCase):
         decal = {"id": "decal", "face": "Front", "transparency": 0, "tint": [1, 1, 1]}
         _, mtl, _ = self.build([block({"name": "Brick"}, layers=[decal])], textures)
         self.assertIn("map_Kd", mtl)
+
+
+class BuiltInMaterialTests(unittest.TestCase):
+    def resolve(self, parts, legacy=False, texture=None, error=None):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        resolver = assets.Resolver(directory.name)
+        with patch.object(resolver, "texture", return_value=texture, side_effect=error) as fetch:
+            payload, warnings, incomplete = resolver.resolve({"parts": parts, "legacyMaterials": legacy})
+        return payload, warnings, incomplete, fetch
+
+    def test_built_in_materials_use_roblox_textures_at_their_scale(self):
+        payload, warnings, incomplete, fetch = self.resolve([block({"name": "Brick"})], texture=texture_of(4, 4, 200))
+        material = payload["parts"][0]["material"]
+        self.assertEqual(material["texture"]["id"], material_assets.CURRENT["Brick"])
+        self.assertEqual(material["studsPerTile"], 8.0)
+        self.assertIn(material_assets.CURRENT["Brick"], payload["textures"])
+        self.assertEqual((warnings, incomplete), ([], False))
+
+    def test_legacy_places_use_pre_2022_textures_only_for_the_base_set(self):
+        payload, *_ = self.resolve([block({"name": "DiamondPlate"}), block({"name": "Asphalt"}),
+                                    block({"name": "Ice"})], legacy=True, texture=texture_of(4, 4, 200))
+        diamond, asphalt, ice = (part["material"] for part in payload["parts"])
+        self.assertEqual(diamond["texture"]["id"], material_assets.LEGACY["DiamondPlate"])
+        self.assertEqual(diamond["studsPerTile"], 5.0)
+        self.assertEqual(asphalt["texture"]["id"], material_assets.CURRENT["Asphalt"], "Terrain-type parts keep current textures")
+        self.assertEqual(ice["texture"]["id"], material_assets.CURRENT["Ice"], "The docs' pre-2022 Ice is a placeholder")
+
+    def test_plain_variants_and_textured_parts_are_left_alone(self):
+        variant = block({"name": "Wood", "variant": "Oak", "texture": {"assetId": "555", "mode": "overlay"}})
+        payload, _, _, fetch = self.resolve([block({"name": "Plastic"}), block({"name": "Wood"}, texture={"id": "face"}),
+                                             variant], texture=texture_of(4, 4, 200))
+        plastic, textured, oak = (part["material"] for part in payload["parts"])
+        self.assertNotIn("texture", plastic)
+        self.assertNotIn("texture", textured)
+        self.assertEqual(oak["texture"]["id"], "555")
+        self.assertEqual([call.args[0] for call in fetch.call_args_list], ["555"])
+
+    def test_failed_downloads_fall_back_to_the_approximation(self):
+        payload, warnings, incomplete, _ = self.resolve([block({"name": "Grass"})], error=assets.AssetError("offline"))
+        material = payload["parts"][0]["material"]
+        self.assertNotIn("texture", material)
+        self.assertNotIn("studsPerTile", material)
+        self.assertTrue(incomplete)
+        self.assertTrue(any("approximation" in warning for warning in warnings))
+        _, mtl, _ = SceneMaterialTests.build(self, payload["parts"])
+        self.assertIn("map_Ke", mtl, "Prism's generated Grass still renders")
+
+    def test_material_textures_are_opaque_and_take_their_gain(self):
+        pixels = np.full((2, 2, 4), 200, dtype=np.uint8)
+        pixels[..., 3] = 0
+        textures = {"t": {"width": 2, "height": 2, "pixels": base64.b64encode(pixels.tobytes()).decode()}}
+        part = block({"name": "Asphalt", "studsPerTile": 8, "texture": {"id": "t", "gain": 0.33}})
+        key, studs = scene.material_texture(part, textures)
+        data = np.frombuffer(base64.b64decode(textures[key]["pixels"]), np.uint8).reshape(-1, 4)
+        self.assertEqual(studs, 8.0)
+        self.assertTrue(np.all(data[:, 3] == 255), "Roblox ignores material alpha")
+        self.assertTrue(np.all(np.abs(data[:, 0] - 200 * 0.33 ** (1 / 2.2)) <= 1))
+
+    def test_every_material_has_a_current_texture_and_sane_scales(self):
+        for name in materials.GENERATORS:
+            with self.subTest(name=name):
+                self.assertIn(name, material_assets.CURRENT)
+        for name in material_assets.LEGACY:
+            self.assertGreater(material_assets.texture(name, True)[1], 0)
 
 
 class ResolverMaterialTests(unittest.TestCase):
