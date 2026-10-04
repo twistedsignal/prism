@@ -19,6 +19,15 @@ class AgentError(ValueError):
     pass
 
 
+def origin(item):
+    """The Studio path of an agent item as history's slash-separated source and parent."""
+    path = item.get("path")
+    names = path.split(".") if isinstance(path, str) else path if isinstance(path, list) else []
+    if not names:
+        return {}
+    return {"source": "/".join(names), **({"parent": names[-2]} if len(names) > 1 else {})}
+
+
 class Broker:
     def __init__(self, bridge, clock=time.monotonic):
         self.bridge, self.clock = bridge, clock
@@ -245,7 +254,7 @@ class Broker:
                     result["imageId"] = resolver.decal_image_id(result["assetId"])
             except Exception as error:  # Report failures without abandoning the remaining targets.
                 result["error"] = str(error)
-            self.bridge.store.record_history("upload" if item["upload"] else "render", [result], item.get("creator"))
+            self.bridge.store.record_history("upload" if item["upload"] else "render", [dict(result, **origin(item))], item.get("creator"))
             results.append(result)
             with self.lock:
                 job["results"] = copy.deepcopy(results)

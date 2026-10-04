@@ -90,7 +90,8 @@ const function openList(button: GuiObject, options: { Option }, onSelect: (any) 
 			Name = "DropdownLayer",
 			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
-			ZIndex = Theme.OVERLAY_Z,
+			-- above any modal it was opened from.
+			ZIndex = Theme.OVERLAY_Z + 10,
 
 			Overlay.dismissLayer(close),
 			if searchable

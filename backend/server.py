@@ -83,6 +83,8 @@ class Bridge:
             if isinstance(index, bool) or not isinstance(index, int) or index < 1:
                 index = position
             name = item.get("name") or f"Icon {index}"
+            # Where the model lives in Studio, for templates and history.
+            origin = {key: item[key] for key in ("source", "parent") if isinstance(item.get(key), str) and item[key]}
             try:
                 png = self.render(
                     item.get("sceneId"), item.get("settings"),
@@ -92,9 +94,9 @@ class Bridge:
                     folder, name, index, settings_config["overwrite"], settings_config["filenamePattern"],
                 )
                 path.write_bytes(png)
-                results.append({"name": name, "path": str(path)})
+                results.append({"name": name, "path": str(path), **origin})
             except Exception as error:  # noqa: BLE001 - reported per item
-                results.append({"name": name, "error": error_message(error)})
+                results.append({"name": name, "error": error_message(error), **origin})
         return results
 
 

@@ -8,6 +8,9 @@ const Base64 = require("./Base64")
 const Serializer = require("./Serializer")
 const LightingSync = require("./LightingSync")
 const MaterialStyle = require("./MaterialStyle")
+const PathGlob = require("./PathGlob")
+const ScriptInsert = require("./ScriptInsert")
+const Template = require("./Template")
 
 const source = vide.source
 
@@ -15,6 +18,7 @@ const VERSION = require("./Version")
 
 const AUTO_3D_KEY = "PrismAuto3d"
 const LAST_SETTINGS_KEY = "PrismLastSettings"
+const TEMPLATES_KEY = "PrismTemplates"
 const UPDATE_CHECK_INTERVAL = 30 * 60
 const THUMBNAIL_SIZE = 128
 const THUMBNAIL_DELAY = 0.6
@@ -45,6 +49,9 @@ export type UploadResult = {
 	imageId: string?,
 	moderation: string?,
 	path: string?,
+	source: string?,
+	parent: string?,
+	creator: string?,
 	error: string?,
 }
 export type HistoryEntry = {
@@ -56,6 +63,8 @@ export type HistoryEntry = {
 	imageId: string?,
 	moderation: string?,
 	creator: string?,
+	source: string?,
+	parent: string?,
 }
 
 const function cloneSettings(settings: Types.Settings): Types.Settings
@@ -89,6 +98,10 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const updateState = source("idle" :: UpdateState)
 	const installedVersion = source(nil :: string?)
 	const history = source({} :: { HistoryEntry })
+	-- templates are edited in place; templatesVersion changes whenever one does.
+	const templates = source(Template.defaults())
+	const templatesVersion = source(0)
+	const lastTemplate = source(nil :: string?)
 
 	task.spawn(function()
 		const ok, saved = pcall(Data.load, plugin, AUTO_3D_KEY, true)
@@ -102,6 +115,24 @@ const function create(plugin: Plugin, bridge: Bridge)
 
 	task.spawn(function()
 		materialStyle(MaterialStyle.load(plugin))
+	end)
+
+	local templatesChanged = false
+	task.spawn(function()
+		const ok, saved = pcall(Data.load, plugin, TEMPLATES_KEY, nil)
+		if not ok or type(saved) ~= "table" or type(saved.templates) ~= "table" or templatesChanged then
+			return
+		end
+		const list = {}
+		for _, template in saved.templates do
+			if type(template) == "table" and type(template.name) == "string" and type(template.item) == "string" then
+				table.insert(list, template)
+			end
+		end
+		templates(list)
+		if type(saved.last) == "string" then
+			lastTemplate(saved.last)
+		end
 	end)
 
 	local lastSettings: Types.Settings = {}
@@ -710,6 +741,166 @@ const function create(plugin: Plugin, bridge: Bridge)
 	end
 
 	-- ---------------------------------------------------------------
+	-- templates
+	-- ---------------------------------------------------------------
+
+	local templateSaveToken = 0
+	const function saveTemplates()
+		templatesChanged = true
+		templatesVersion(vide.untrack(templatesVersion) + 1)
+		templateSaveToken += 1
+		const token = templateSaveToken
+		task.delay(SAVE_DELAY, function()
+			if token == templateSaveToken and not destroyed then
+				pcall(Data.save, plugin, TEMPLATES_KEY, { templates = vide.untrack(templates), last = vide.untrack(lastTemplate) })
+			end
+		end)
+	end
+
+	const function findTemplate(name: string?): Template.Template?
+		for _, template in vide.untrack(templates) do
+			if template.name == name then
+				return template
+			end
+		end
+		return nil
+	end
+
+	-- "Name", or "Name 2", "Name 3"… when it's taken by another template.
+	const function uniqueName(base: string, except: Template.Template?): string
+		local name = if base == "" then "Template" else base
+		local counter = 1
+		while true do
+			const existing = findTemplate(name)
+			if existing == nil or existing == except then
+				return name
+			end
+			counter += 1
+			name = `{base} {counter}`
+		end
+	end
+
+	const function updateTemplate(template: Template.Template, changes: { [string]: any })
+		for field, value in changes do
+			if field == "name" then
+				const old = template.name
+				template.name = uniqueName(string.sub(value, 1, 64), template)
+				if vide.untrack(lastTemplate) == old then
+					lastTemplate(template.name)
+				end
+			else
+				(template :: any)[field] = value
+			end
+		end
+		saveTemplates()
+	end
+
+	const function addTemplate(template: Template.Template): Template.Template
+		template.name = uniqueName(template.name)
+		const list = table.clone(vide.untrack(templates))
+		table.insert(list, template)
+		templates(list)
+		saveTemplates()
+		return template
+	end
+
+	const function deleteTemplate(template: Template.Template)
+		const list = table.clone(vide.untrack(templates))
+		const index = table.find(list, template)
+		if index then
+			table.remove(list, index)
+			templates(list)
+			saveTemplates()
+		end
+	end
+
+	-- brings back the built-in templates, resetting any that kept their names.
+	const function restoreTemplates()
+		const list = table.clone(vide.untrack(templates))
+		for _, default in Template.defaults() do
+			const existing = findTemplate(default.name)
+			if existing then
+				table.clear(existing)
+				for field, value in default do
+					(existing :: any)[field] = value
+				end
+			else
+				table.insert(list, default)
+			end
+		end
+		templates(list)
+		saveTemplates()
+	end
+
+	-- the template last picked for output, or the first one.
+	const function currentTemplate(): Template.Template?
+		templatesVersion()
+		const list = templates()
+		const name = lastTemplate()
+		for _, template in list do
+			if template.name == name then
+				return template
+			end
+		end
+		return list[1]
+	end
+
+	const function useTemplate(name: string)
+		lastTemplate(name)
+		saveTemplates()
+	end
+
+	-- finds the script a template writes to, then inserts the items there.
+	const function insertTemplate(template: Template.Template, entries: { Template.Entry })
+		const target = template.target or ""
+		local script: LuaSourceContainer? = nil
+		if target ~= "" then
+			const found = PathGlob.match(game, target, {
+				limit = 2,
+				filter = function(instance)
+					return instance:IsA("LuaSourceContainer")
+				end,
+			})
+			if found == nil or #found == 0 then
+				setNotice(`No script matches {target}.`, "error")
+				return
+			elseif #found > 1 then
+				setNotice(`More than one script matches {target}. Use a more specific path.`, "error")
+				return
+			end
+			script = found[1] :: LuaSourceContainer
+		else
+			for _, instance in game:GetService("Selection"):Get() do
+				if instance:IsA("LuaSourceContainer") then
+					script = instance
+					break
+				end
+			end
+			if script == nil then
+				setNotice("Select a ModuleScript in Studio, or set the template's target script.", "error")
+				return
+			end
+		end
+		const chosen = script :: LuaSourceContainer
+		const items = Template.renderItems(template, entries, os.time())
+		task.spawn(function()
+			const ok, result = pcall(ScriptInsert.apply, chosen, items, template.replace)
+			if not ok then
+				setNotice(`Could not write to {chosen.Name}: {result}`, "error")
+				return
+			end
+			const parts = {}
+			if result.inserted > 0 then
+				table.insert(parts, `added {result.inserted} {result.where}`)
+			end
+			if result.replaced > 0 then
+				table.insert(parts, `replaced {result.replaced}`)
+			end
+			setNotice(`{chosen.Name}: {table.concat(parts, ", ")}. Ctrl+Z undoes it.`, "success")
+		end)
+	end
+
+	-- ---------------------------------------------------------------
 	-- backend data
 	-- ---------------------------------------------------------------
 
@@ -854,6 +1045,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 					settings = model.settings(),
 					-- {index} in file names is the model's position in the list.
 					index = table.find(models(), model),
+					-- where the model lives, for templates and history.
+					source = PathGlob.pathOf(model.instance, game),
+					parent = if model.instance.Parent then model.instance.Parent.Name else nil,
 				})
 				table.insert(included, model)
 			end
@@ -918,6 +1112,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 			end
 			const results = response.body.results :: { UploadResult }
 			for index, result in results do
+				result.creator = result.creator or response.body.creator
 				const model = included[index]
 				if model and result.assetId then
 					model.assetId(result.imageId or result.assetId)
@@ -1008,6 +1203,16 @@ const function create(plugin: Plugin, bridge: Bridge)
 		updateState = updateState,
 		installedVersion = installedVersion,
 		history = history,
+		templates = templates,
+		templatesVersion = templatesVersion,
+		lastTemplate = lastTemplate,
+		currentTemplate = currentTemplate,
+		useTemplate = useTemplate,
+		updateTemplate = updateTemplate,
+		addTemplate = addTemplate,
+		deleteTemplate = deleteTemplate,
+		restoreTemplates = restoreTemplates,
+		insertTemplate = insertTemplate,
 		loadHistory = loadHistory,
 		clearHistory = clearHistory,
 		checkForUpdate = checkForUpdate,

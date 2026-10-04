@@ -66,7 +66,7 @@ CONFIG_DEFAULTS = {
 
 CREATOR_PATTERN = re.compile(r"^(user|group):\d+$")
 MAX_HISTORY = 500
-HISTORY_FIELDS = ("name", "path", "assetId", "imageId", "moderation", "creator")
+HISTORY_FIELDS = ("name", "path", "assetId", "imageId", "moderation", "creator", "source", "parent")
 
 
 def normalize_config(values):

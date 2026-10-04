@@ -1,9 +1,12 @@
 -- selene: allow(mixed_table)
 -- lists past renders and uploads, newest first, with the IDs Roblox gave each upload.
+-- click rows to select them (shift-click for a range), then fill a template with them.
 const vide = require("../vide")
 const Theme = require("../components/Theme")
 const Button = require("../components/Button")
 const Segmented = require("../components/Segmented")
+const Modal = require("../components/Modal")
+const TemplateOutput = require("../components/TemplateOutput")
 const Store = require("../Store")
 
 const new = vide.create
@@ -49,7 +52,12 @@ const function label(props: {
 	}) :: TextLabel
 end
 
-const function row(entry: Store.HistoryEntry, index: () -> number): Frame
+type Selection = {
+	isSelected: (Store.HistoryEntry) -> boolean,
+	click: (Store.HistoryEntry, number, boolean) -> (),
+}
+
+const function row(entry: Store.HistoryEntry, index: () -> number, selection: Selection): TextButton
 	const uploaded = entry.kind == "upload"
 	-- ImageLabels need the image ID; fall back to the Decal if Roblox hasn't exposed it.
 	const id = entry.imageId or entry.assetId
@@ -85,14 +93,27 @@ const function row(entry: Store.HistoryEntry, index: () -> number): Frame
 		status = if entry.imageId then entry.moderation or "" else `Decal · {entry.moderation or ""}`
 	end
 
-	return new("Frame")({
+	return new("TextButton")({
 		Name = entry.name or "Model",
 		Size = UDim2.new(1, 0, 0, ROW_HEIGHT),
 		LayoutOrder = index,
 		BackgroundColor3 = function()
+			if selection.isSelected(entry) then
+				return Theme.BLUE_DARK
+			end
 			return if index() % 2 == 0 then Theme.ROW_ALT else Theme.ROW
 		end,
 		BorderSizePixel = 0,
+		Text = "",
+		AutoButtonColor = false,
+		InputBegan = function(input: InputObject)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				const ok, shift = pcall(function()
+					return input:IsModifierKeyDown(Enum.ModifierKey.Shift)
+				end)
+				selection.click(entry, index(), ok and shift)
+			end
+		end,
 
 		label({
 			text = entry.name or "Unnamed",
@@ -116,7 +137,27 @@ const function row(entry: Store.HistoryEntry, index: () -> number): Frame
 			color = if entry.moderation == "Approved" then Theme.GREEN else Theme.YELLOW,
 			alignment = Enum.TextXAlignment.Right,
 		}),
-	}) :: Frame
+	}) :: TextButton
+end
+
+const function openTemplate(store: Store.Store, entries: { Store.HistoryEntry })
+	Modal.open({
+		title = `Use template · {#entries} upload{if #entries == 1 then "" else "s"}`,
+		width = 560,
+		height = 420,
+		buttons = {
+			{
+				text = "Done",
+				variant = "accent",
+				activated = function(close)
+					close()
+				end,
+			},
+		},
+		body = function()
+			return TemplateOutput({ store = store, entries = entries })
+		end,
+	})
 end
 
 const function HistoryPage(props: Props): Frame
@@ -138,6 +179,42 @@ const function HistoryPage(props: Props): Frame
 		return list
 	end
 
+	const selected = source({} :: { [Store.HistoryEntry]: boolean })
+	local anchor: number? = nil
+	const selection: Selection = {
+		isSelected = function(entry)
+			return selected()[entry] == true
+		end,
+		click = function(entry, position, shift)
+			const list = vide.untrack(entries)
+			local next = table.clone(vide.untrack(selected))
+			if shift and anchor and list[anchor] then
+				next = {}
+				for at = math.min(anchor, position), math.max(anchor, position) do
+					next[list[at]] = true
+				end
+			else
+				next[entry] = if next[entry] then nil else true
+				anchor = position
+			end
+			selected(next)
+		end,
+	}
+	-- the selected uploads, or every upload in view when nothing is selected.
+	const templateEntries = function(): ({ Store.HistoryEntry }, boolean)
+		const chosen, all = {}, {}
+		const marks = selected()
+		for _, entry in entries() do
+			if entry.kind == "upload" and (entry.imageId or entry.assetId) then
+				table.insert(all, entry)
+				if marks[entry] then
+					table.insert(chosen, entry)
+				end
+			end
+		end
+		return if #chosen > 0 then chosen else all, #chosen > 0
+	end
+
 	local confirmToken = 0
 	return new("Frame")({
 		Name = "HistoryPage",
@@ -154,7 +231,7 @@ const function HistoryPage(props: Props): Frame
 		}),
 		new("TextLabel")({
 			Position = UDim2.fromOffset(252, 0),
-			Size = UDim2.new(1, -460, 0, TOOLBAR_HEIGHT),
+			Size = UDim2.new(1, -590, 0, TOOLBAR_HEIGHT),
 			BackgroundTransparency = 1,
 			Text = function()
 				const count = #entries()
@@ -165,6 +242,22 @@ const function HistoryPage(props: Props): Frame
 			TextColor3 = Theme.SUBTLE,
 			Font = Enum.Font.SourceSans,
 			TextSize = 14,
+		}),
+		Button({
+			text = function()
+				const list, chosen = templateEntries()
+				return if chosen then `Use template ({#list})` else "Use template"
+			end,
+			variant = "accent",
+			anchorPoint = Vector2.new(1, 0),
+			position = UDim2.new(1, -210, 0, 0),
+			size = UDim2.fromOffset(124, TOOLBAR_HEIGHT),
+			enabled = function()
+				return #templateEntries() > 0
+			end,
+			activated = function()
+				openTemplate(store, (templateEntries()))
+			end,
 		}),
 		Button({
 			text = "Refresh",
@@ -214,7 +307,9 @@ const function HistoryPage(props: Props): Frame
 
 			Theme.stroke(Theme.BORDER),
 			new("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
-			vide.values(entries, row),
+			vide.values(entries, function(entry, index)
+				return row(entry, index, selection)
+			end),
 			new("TextLabel")({
 				Name = "Empty",
 				Size = UDim2.new(1, 0, 0, 60),

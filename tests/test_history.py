@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+import agent
 import config
 
 
@@ -31,6 +32,18 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(history[1]["imageId"], "222")
         self.assertEqual(history[1]["creator"], "user:5")
         self.assertIsInstance(history[2]["time"], int)
+
+    def test_records_studio_source_and_parent(self):
+        self.store.record_history("upload", [{"name": "Sword", "path": "/Sword.png", "assetId": "1",
+                                              "source": "ReplicatedStorage/Weapons/Sword", "parent": "Weapons"}])
+        entry = self.store.get_history()[0]
+        self.assertEqual(entry["source"], "ReplicatedStorage/Weapons/Sword")
+        self.assertEqual(entry["parent"], "Weapons")
+
+    def test_agent_origin_from_dotted_or_list_paths(self):
+        self.assertEqual(agent.origin({"path": "Workspace.Props.Crate"}), {"source": "Workspace/Props/Crate", "parent": "Props"})
+        self.assertEqual(agent.origin({"path": ["Workspace"]}), {"source": "Workspace"})
+        self.assertEqual(agent.origin({"target": "abc"}), {})
 
     def test_history_is_capped_and_clearable(self):
         self.store.record_history("render", [{"name": str(i), "path": f"/{i}.png"} for i in range(config.MAX_HISTORY + 10)])

@@ -16,7 +16,7 @@ const function TabButton(parent: Instance, text: string, activated: (() -> ())?)
 	local indicator: Frame
 	const button = new("TextButton")({
 		Name = `{text}Tab`,
-		Size = UDim2.new(0, 100, 1, 0),
+		Size = UDim2.new(0, 88, 1, 0),
 		BackgroundColor3 = Theme.ROW_ALT,
 		BorderSizePixel = 0,
 		Text = text,

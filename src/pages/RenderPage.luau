@@ -17,6 +17,7 @@ const TextBoxSetting = require("../components/TextBoxSetting")
 const ModelCard = require("../components/ModelCard")
 const Preview = require("../components/Preview")
 const Modal = require("../components/Modal")
+const TemplateOutput = require("../components/TemplateOutput")
 const Store = require("../Store")
 const Requirements = require("../Requirements")
 const SettingsSearch = require("../SettingsSearch")
@@ -94,11 +95,19 @@ const function useTargets(store: Store.Store): () -> { Target }
 	end
 end
 
-const function showUploadResults(results: { Store.UploadResult })
+const function showUploadResults(store: Store.Store, results: { Store.UploadResult })
+	const uploaded = {}
+	for _, result in results do
+		if result.error == nil and result.assetId then
+			table.insert(uploaded, result)
+		end
+	end
+	const listHeight = math.min(#results * 48, if #uploaded > 0 then 168 else 360)
+	const outputHeight = if #uploaded > 0 then 250 else 0
 	Modal.open({
 		title = "Upload results",
-		width = 420,
-		height = math.min(110 + #results * 54, 460),
+		width = if #uploaded > 0 then 560 else 420,
+		height = 110 + listHeight + outputHeight,
 		buttons = {
 			{
 				text = "Done",
@@ -180,19 +189,33 @@ const function showUploadResults(results: { Store.UploadResult })
 						}),
 				}))
 			end
-			return new("ScrollingFrame")({
-				Name = "Results",
+			return new("Frame")({
+				Name = "Body",
 				BackgroundTransparency = 1,
-				BorderSizePixel = 0,
-				ScrollBarThickness = 6,
-				ScrollBarImageColor3 = Theme.BORDER,
-				CanvasSize = UDim2.new(),
-				AutomaticCanvasSize = Enum.AutomaticSize.Y,
-				ZIndex = Theme.OVERLAY_Z + 1,
 
-				new("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
-				rows,
-			}) :: ScrollingFrame
+				new("ScrollingFrame")({
+					Name = "Results",
+					Size = UDim2.new(1, 0, 0, listHeight),
+					BackgroundTransparency = 1,
+					BorderSizePixel = 0,
+					ScrollBarThickness = 6,
+					ScrollBarImageColor3 = Theme.BORDER,
+					CanvasSize = UDim2.new(),
+					AutomaticCanvasSize = Enum.AutomaticSize.Y,
+					ZIndex = Theme.OVERLAY_Z + 1,
+
+					new("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
+					rows,
+				}),
+				if #uploaded > 0
+					then TemplateOutput({
+						store = store,
+						entries = uploaded,
+						position = UDim2.fromOffset(0, listHeight + 10),
+						size = UDim2.new(1, 0, 1, -(listHeight + 10)),
+					})
+					else nil,
+			}) :: Frame
 		end,
 	})
 end
@@ -545,7 +568,9 @@ const function RenderPage(props: Props): Frame
 			store.setNotice("Set a default creator in Settings to upload from an unpublished place.", "error")
 			return
 		end
-		store.uploadModels(models, chosen.creator, showUploadResults)
+		store.uploadModels(models, chosen.creator, function(results)
+			showUploadResults(store, results)
+		end)
 	end
 
 	-- Refresh after the bridge reconnects. View changes never trigger another render.

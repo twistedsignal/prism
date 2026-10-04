@@ -13,6 +13,7 @@ const HistoryPage = require("./pages/HistoryPage")
 const RenderPage = require("./pages/RenderPage")
 const SelectPage = require("./pages/SelectPage")
 const SettingsPage = require("./pages/SettingsPage")
+const TemplatesPage = require("./pages/TemplatesPage")
 const UpdatePrompt = require("./UpdatePrompt")
 const VERSION = require("./Version")
 
@@ -64,7 +65,7 @@ const function App(props: Props): Frame
 		end
 	end)
 
-	const page = source("render" :: "render" | "select" | "settings" | "history")
+	const page = source("render" :: "render" | "select" | "templates" | "settings" | "history")
 	-- kept here so the search survives switching tabs.
 	const selectQuery = source("")
 	const selectFilter = source(1)
@@ -114,7 +115,7 @@ const function App(props: Props): Frame
 		new("Frame")({
 			Name = "Status",
 			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(0.5, -224, 1, 0),
+			Size = UDim2.new(0.5, -248, 1, 0),
 			BackgroundTransparency = 1,
 
 			new("UIListLayout")({
@@ -241,7 +242,7 @@ const function App(props: Props): Frame
 		Name = "Tabs",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 12),
-		Size = UDim2.fromOffset(424, 32),
+		Size = UDim2.fromOffset(472, 32),
 		BackgroundTransparency = 1,
 		Parent = header,
 
@@ -258,17 +259,22 @@ const function App(props: Props): Frame
 		page("select")
 	end)
 	selectTab.button.LayoutOrder = 1
+	const templatesTab = TabButton(tabs, "Templates", function()
+		page("templates")
+	end)
+	templatesTab.button.LayoutOrder = 2
 	const settingsTab = TabButton(tabs, "Settings", function()
 		page("settings")
 	end)
-	settingsTab.button.LayoutOrder = 2
+	settingsTab.button.LayoutOrder = 3
 	const historyTab = TabButton(tabs, "History", function()
 		page("history")
 	end)
-	historyTab.button.LayoutOrder = 3
+	historyTab.button.LayoutOrder = 4
 	effect(function()
 		renderTab.active(page() == "render")
 		selectTab.active(page() == "select")
+		templatesTab.active(page() == "templates")
 		settingsTab.active(page() == "settings")
 		historyTab.active(page() == "history")
 	end)
@@ -404,6 +410,9 @@ const function App(props: Props): Frame
 							page("render")
 						end,
 					})
+				end,
+				templates = function()
+					return TemplatesPage({ store = store })
 				end,
 				settings = function()
 					return SettingsPage({

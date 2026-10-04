@@ -32,6 +32,17 @@ irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1 | iex
 
 To pick models by path instead, open the **Select** tab and type a pattern such as `ReplicatedStorage/Assets/Models/**`. Patterns follow `.gitignore` rules: `/` separates names, `*` and `?` match inside a name, `[a-z]` and `[!a-z]` match one character from a set, `**/` matches any depth, `/**` everything inside, and `a/**/b` any number of levels between. A pattern with no slash, or only a trailing one, matches at any depth; a leading or middle slash anchors it to the place (`game/` works too). A trailing `/` matches only instances with children. Matching is case-sensitive, and `\` escapes a literal `/` or `*` in a name. Suggestions follow your typing like a code editor and ignore case: press Tab to accept the highlighted one, or click any other. Studio keeps arrow keys from plugins, so they do not move through suggestions. Filter matches to Models, Parts, Folders or anything Prism can render, then click **Select** to replace the Studio selection or **Add** to extend it. Nested matches collapse into their outermost match.
 
+The **Templates** tab turns uploads into code. A template such as `itemIcon` is written once per model:
+
+```lua
+{
+	Name = "{RENDER_NAME}",
+	ImageContent = Content.fromAssetId({UPLOAD_ASSET_ID}),
+},
+```
+
+After an upload, or from History with **Use template**, pick a template to see the filled-in code. Click the code to select it for Ctrl+C, or click **Insert into script** to write it into the template's target script or the script selected in Studio. Items go above a `-- @prism` line, before the closing `}` of `return {`, or at the end, and Ctrl+Z undoes it. **Replace matching entries** updates an existing entry with the same name instead of adding another. Templates support a header, footer and separator, variables such as `ASSET_URI`, `INSTANCE_PATH` and `PARENT_NAME`, and filters such as `{RENDER_NAME|snake}` or `{RENDER_NAME|key}`. The **?** button on the tab lists them all. Prism includes `itemIcon`, `Dictionary`, `Constants`, `IDs only` and `JSON` templates, and they're saved per Studio user.
+
 The **History** tab lists the models you've rendered and uploaded, newest first. Uploads show their `rbxassetid://` image ID, which you can select and copy, plus the moderation state. Agent renders and uploads appear there too. The backend keeps the latest 500 entries in `history.json` next to its config. **Clear** asks for a second click before deleting them.
 
 The plugin has outlines, shadows, glow, color and depth effects, and text. Presets are saved locally. Prism also remembers a model's settings when you deselect and reselect it.

@@ -91,6 +91,9 @@ local modules = {
     ['./Data'] = { load = function(_, _, fallback) return fallback end, save = function(_, _, value) saved = value end },
     ['./Types'] = {}, ['./Base64'] = {}, ['./Version'] = 'test',
     ['./MaterialStyle'] = { load = function() return 'auto' end, save = function() end },
+    ['./PathGlob'] = { pathOf = function() return '' end, match = function() return {}, false end },
+    ['./ScriptInsert'] = {},
+    ['./Template'] = { defaults = function() return {} end },
     ['./Serializer'] = { getParts = function(root) return root.parts end },
     ['./LightingSync'] = {
         capture = function()
