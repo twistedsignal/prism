@@ -104,4 +104,18 @@ overrides.Wood = 'Oak'
 assert(serializer.serialize(part).payload.parts[1].material.variant == 'Oak', 'Base material overrides apply')
 part.Material = Materials.Brick
 assert(serializer.serialize(part).payload.parts[1].material.variant == nil, 'Variants only match their base material')
+-- Use2022Materials is hidden from plugins in Studio; an explicit style takes over then.
+setmetatable(services.MaterialService, { __index = function(_, key)
+    if key == 'Use2022Materials' then error('lacking capability RobloxScript') end
+end })
+assert(serializer.serialize(part).payload.legacyMaterials == false, 'Unreadable places assume 2022 materials')
+serializer.setMaterialStyle('legacy')
+assert(serializer.serialize(part).payload.legacyMaterials == true, 'The legacy style marks the payload')
+setmetatable(services.MaterialService, nil)
+services.MaterialService.Use2022Materials = false
+serializer.setMaterialStyle('2022')
+assert(serializer.serialize(part).payload.legacyMaterials == false, 'An explicit 2022 style wins over the place')
+serializer.setMaterialStyle('auto')
+assert(serializer.serialize(part).payload.legacyMaterials == true, 'Automatic follows a readable Use2022Materials')
+services.MaterialService.Use2022Materials = nil
 print('Material and MaterialVariant serialization checks passed')

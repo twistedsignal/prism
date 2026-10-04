@@ -14,6 +14,7 @@ const PREVIEW_SIZES = { 128, 256, 384, 512, 768, 1024 }
 const RENDER_SIZES = { 128, 256, 384, 512, 768, 1024, 2048, 4096 }
 const EMOJI_PROVIDERS = { "apple", "google", "facebook", "twitter" }
 const AA = { "OFF", "FXAA", "5", "8", "11", "16", "32" }
+const MATERIAL_STYLES = { auto = "Automatic", ["2022"] = "2022 materials", legacy = "Legacy (pre-2022)" }
 
 export type Props = {
 	store: Store.Store,
@@ -128,6 +129,24 @@ const function SettingsPage(props: Props): ScrollingFrame
 			onSelect = function(value)
 				store.updateConfig({ emojiProvider = value })
 			end,
+		})),
+
+		row(DropdownSetting({
+			name = "Material style",
+			index = 2,
+			description = "Built-in material look for this place. Studio hides MaterialService.Use2022Materials from plugins, "
+				.. "so Automatic uses 2022 materials unless Studio reports otherwise. Choose Legacy for places that turned 2022 materials off.",
+			text = function()
+				return MATERIAL_STYLES[store.materialStyle()] or "Automatic"
+			end,
+			options = function()
+				return {
+					{ value = "auto", label = MATERIAL_STYLES.auto },
+					{ value = "2022", label = MATERIAL_STYLES["2022"] },
+					{ value = "legacy", label = MATERIAL_STYLES.legacy },
+				}
+			end,
+			onSelect = store.setMaterialStyle,
 		})),
 
 		heading("Output", nextOrder()),

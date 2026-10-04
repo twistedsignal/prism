@@ -28,6 +28,7 @@ local modules = {
 	},
 	["./Types"] = {},
 	["./LightingSync"] = {},
+	["./MaterialStyle"] = { load = function() return "auto" end, save = function() end },
 	["./Base64"] = { decode = function() return buffer.create(4) end },
 	["./Version"] = "test",
 	["./Serializer"] = {

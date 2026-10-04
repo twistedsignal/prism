@@ -21,7 +21,8 @@ Payload (all coordinates are Roblox studs, Y up, relative to the model pivot):
           "scale": [x, y, z], "offset": [x, y, z], "center": true
         }
       }],
-      "textures": {"<key>": {"width": w, "height": h, "pixels": base64 RGBA8 rows top-down}}
+      "textures": {"<key>": {"width": w, "height": h, "pixels": base64 RGBA8 rows top-down}},
+      "legacyMaterials": false  # true for places using pre-2022 built-in materials
     }
 """
 
@@ -138,8 +139,11 @@ def box_uvs(corners, studs_per_tile):
     return result
 
 
-def material_texture(part, textures):
-    """(texture id, studs per tile) for the part's material, or None for a plain color."""
+def material_texture(part, textures, legacy=False):
+    """(texture id, studs per tile) for the part's material, or None for a plain color.
+
+    legacy: the place turned off Use2022Materials, so built-ins use their older look.
+    """
     # Imported lazily: the server imports this module and must not load numpy.
     import materials as roblox_materials
 
@@ -153,8 +157,9 @@ def material_texture(part, textures):
         return reference["id"], spacing
     name = material.get("name")
     if isinstance(name, str) and roblox_materials.has_texture(name):
-        key = f"material:{name}"
-        textures[key] = roblox_materials.texture(name)
+        legacy = roblox_materials.is_legacy(name, legacy)
+        key = f"material-legacy:{name}" if legacy else f"material:{name}"
+        textures[key] = roblox_materials.texture(name, legacy)
         return key, roblox_materials.studs_per_tile(name)
     return None
 
@@ -456,7 +461,7 @@ def build(payload, directory):
         if isinstance(part.get("material"), dict) and part["material"].get("name") == "Neon":
             import materials as roblox_materials
             rgb = roblox_materials.neon_color(rgb)
-        surface = material_texture(part, textures)
+        surface = material_texture(part, textures, payload.get("legacyMaterials") is True)
         layers = list(part.get("layers") or [])
         colors = decode_floats(part["mesh"].get("colors"), "mesh colors") if kind == "mesh" else None
         if colors is not None:
@@ -561,8 +566,9 @@ class SceneCache:
         if self.resolver:
             payload, recovery_warnings, incomplete = self.resolver.resolve(payload)
         # Resolved bytes change the ID after credential repair, invalidating renderer objects.
+        # Bump the prefix when generated textures change, so cached scenes rebuild.
         resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        identifier = scene_id(b"appearance-v9:" + resolved)
+        identifier = scene_id(b"appearance-v10:" + resolved)
         if incomplete:
             identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier

@@ -8,6 +8,9 @@ const vide = require("@self/vide")
 const App = require("@self/App")
 const Bridge = require("@self/Bridge")
 const AgentService = require("@self/AgentService")
+const MaterialStyle = require("@self/MaterialStyle")
+-- agent jobs serialize models even while the panel is closed.
+task.spawn(MaterialStyle.load, plugin)
 const stopAgentService = AgentService.create(plugin)
 
 const WIDGET_ID = "prism-main"

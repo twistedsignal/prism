@@ -4,6 +4,10 @@ Roblox streams its material textures at runtime instead of shipping them with
 Studio, so Prism generates a seamless grayscale detail map per material. The
 renderer multiplies it by the part color, as Roblox tints its materials.
 Custom MaterialVariants use their real ColorMap instead.
+
+Places that turn off MaterialService.Use2022Materials show Roblox's earlier
+material set. LEGACY_GENERATORS approximates those looks for the materials that
+existed then; materials added in 2022 look the same either way.
 """
 
 import base64
@@ -169,8 +173,18 @@ def speckled(seed, density, contrast):
 
 
 def slate(seed=6):
-    layers = fbm(seed, 2, 12)
-    return 0.7 + 0.25 * layers + 0.06 * (fbm(seed + 3, 32) - 0.5)
+    # Overlapping flat flakes of slightly different tone, not streaks.
+    _, edge, cell = voronoi(seed, 24)
+    flakes = 0.8 + 0.12 * (per_cell(seed + 1, cell, 24) - 0.5)
+    chipped = np.clip(edge / 0.01, 0, 1)
+    return flakes * (0.9 + 0.1 * chipped) + 0.06 * (fbm(seed + 3, 32) - 0.5)
+
+
+def sandstone(seed=23):
+    # Flat sediment layers with grain; strongly warped bands looked like wood rings.
+    _, y = coordinates()
+    layers = 0.5 + 0.5 * np.sin(2 * np.pi * (y * 4 + 0.15 * fbm(seed, 2)))
+    return 0.84 + 0.04 * layers + 0.1 * (value_noise(seed + 1, 96) - 0.5) + 0.05 * (fbm(seed + 2, 8) - 0.5)
 
 
 def marble(seed=7):
@@ -182,7 +196,9 @@ def marble(seed=7):
 
 
 def brushed_metal(seed=8):
-    return 0.86 + 0.1 * (fbm(seed, 2, 96, octaves=3) - 0.5) + 0.05 * (fbm(seed + 1, 4) - 0.5)
+    # Nearly flat: hairline brushing only a pixel or two wide, so it never reads as grain.
+    hairlines = value_noise(seed, 256, 4)
+    return 0.88 + 0.03 * (hairlines - 0.5) + 0.04 * (fbm(seed + 1, 6) - 0.5)
 
 
 def diamond_plate(seed=9):
@@ -217,9 +233,10 @@ def weave(seed=12, threads=16, contrast=0.22):
 
 
 def grass(seed=13, base=0.78):
-    blades = fbm(seed, 24, 6, octaves=3)
+    # Fine, even speckle with soft clumps; stretched noise looked like wood grain.
+    blades = value_noise(seed, 128) * 0.6 + value_noise(seed + 2, 64) * 0.4
     clumps = fbm(seed + 1, 4)
-    return base + 0.2 * (blades - 0.5) + 0.12 * (clumps - 0.5)
+    return base + 0.22 * (blades - 0.5) + 0.1 * (clumps - 0.5)
 
 
 def cracked(seed, count, crack, glow=False):
@@ -273,8 +290,7 @@ GENERATORS = {
     "Concrete": lambda: grainy(20, 16, 0.12),
     "Plaster": lambda: grainy(21, 8, 0.08, base=0.88),
     "Limestone": lambda: grainy(22, 6, 0.16, base=0.86),
-    "Sandstone": lambda: 0.8 + 0.1 * np.sin(2 * np.pi * (coordinates()[1] * 8 + fbm(23, 3) * 1.5)) * 0.5
-    + 0.08 * (fbm(24, 24) - 0.5),
+    "Sandstone": sandstone,
     "Slate": slate,
     "Granite": lambda: speckled(25, 0.12, 0.18),
     "Marble": marble,
@@ -303,6 +319,112 @@ GENERATORS = {
     "RoofShingles": lambda: roof_tiles(41, rows=8, columns=5, scallop=False),
 }
 
+# ============================================================
+# LEGACY (pre-2022) PATTERNS: busier, higher contrast, smaller features
+# ============================================================
+
+def legacy_wood(seed=50):
+    # Straight, fine grain lines with no growth rings.
+    x, y = coordinates()
+    lines = value_noise(seed, 3, 128) * 0.7 + value_noise(seed + 2, 2, 32) * 0.3
+    streaks = np.clip((lines - 0.5) * 3, 0, 1)
+    return 0.86 - 0.14 * streaks + 0.05 * (fbm(seed + 1, 4, 16) - 0.5)
+
+
+def legacy_wood_planks(seed=51):
+    x, y = coordinates()
+    rows = 8
+    row = np.floor(y * rows).astype(int)
+    offsets = grid(seed).random(rows).astype(np.float32)
+    shifted = (x + offsets[row]) % 1.0
+    tone = 0.84 + 0.08 * (grid(seed + 1).random(rows).astype(np.float32)[row] - 0.5)
+    gaps = np.maximum(seams(y, rows, 0.008), (shifted < 0.006).astype(np.float32))
+    return tone * (0.9 + 0.1 * legacy_wood(seed + 2)) * (1 - 0.5 * gaps)
+
+
+def legacy_grass(seed=52):
+    # Dense, contrasty speckle like the old carpet-like grass.
+    return 0.76 + 0.34 * (value_noise(seed, 128) - 0.5) + 0.1 * (value_noise(seed + 1, 32) - 0.5)
+
+
+def legacy_metal(seed=53):
+    # Scuffed plate: soft worn patches and short scratches.
+    scuffs = fbm(seed, 4, octaves=5)
+    scratches = (value_noise(seed + 1, 96, 6) > 0.85).astype(np.float32)
+    return 0.8 + 0.16 * (scuffs - 0.5) - 0.06 * scratches
+
+
+def legacy_corroded(seed=54):
+    rust = fbm(seed, 8, octaves=5)
+    blotches = np.clip((rust - 0.5) * 6, 0, 1)
+    return 0.88 - 0.28 * blotches + 0.05 * (value_noise(seed + 1, 64) - 0.5)
+
+
+def legacy_diamond_plate(seed=55):
+    x, y = coordinates()
+    count = 16
+    u, v = (x * count) % 1.0, (y * count) % 1.0
+    first = np.abs(u - 0.25) * 0.5 + np.abs(v - 0.25) * 1.8 < 0.2
+    second = np.abs(u - 0.75) * 1.8 + np.abs(v - 0.75) * 0.5 < 0.2
+    return 0.74 + 0.22 * (first | second).astype(np.float32) + 0.04 * (fbm(seed, 4) - 0.5)
+
+
+def legacy_slate(seed=56):
+    # Dark, rough rock with chipped cracks.
+    return cracked(seed, 60, 0.006) + 0.12 * (fbm(seed + 3, 16) - 0.5)
+
+
+def legacy_concrete(seed=57):
+    pits = (value_noise(seed, 128) > 0.82).astype(np.float32)
+    return 0.84 + 0.1 * (fbm(seed + 1, 12) - 0.5) - 0.12 * pits
+
+
+def legacy_brick(seed=58):
+    x, y = coordinates()
+    rows, columns = 12, 6
+    row = np.floor(y * rows).astype(int)
+    shifted = (x + (row % 2) * 0.5 / columns) % 1.0
+    column = np.floor(shifted * columns).astype(int)
+    tone = grid(seed).random((rows, columns)).astype(np.float32)[row, column]
+    mortar = np.maximum(seams(y, rows, 0.01), seams(shifted, columns, 0.008))
+    face = 0.74 + 0.14 * (tone - 0.5) + 0.12 * (fbm(seed + 1, 24) - 0.5)
+    return face * (1 - mortar) + 0.95 * mortar
+
+
+def legacy_fabric(seed=59):
+    return weave(seed, threads=32, contrast=0.32)
+
+
+def legacy_foil(seed=60):
+    # Crumpled facets: many small cells with sharp tone changes.
+    _, _, cell = voronoi(seed, 200)
+    return 0.72 + 0.28 * per_cell(seed + 1, cell, 200)
+
+
+def legacy_ice(seed=61):
+    return 0.9 + 0.06 * (fbm(seed, 3, 8) - 0.5) - 0.12 * np.clip(1 - voronoi(seed + 1, 8)[1] / 0.004, 0, 1)
+
+
+LEGACY_GENERATORS = {
+    "Wood": legacy_wood,
+    "WoodPlanks": legacy_wood_planks,
+    "Grass": legacy_grass,
+    "Metal": legacy_metal,
+    "CorrodedMetal": legacy_corroded,
+    "DiamondPlate": legacy_diamond_plate,
+    "Slate": legacy_slate,
+    "Concrete": legacy_concrete,
+    "Brick": legacy_brick,
+    "Cobblestone": lambda: stones(62, 40, 0.016, rounded=True),
+    "Pebble": lambda: stones(63, 120, 0.01, rounded=True),
+    "Granite": lambda: speckled(64, 0.2, 0.24),
+    "Marble": lambda: marble(65) * 0.95 + 0.04,
+    "Sand": lambda: grainy(66, 96, 0.18, base=0.86, octaves=2),
+    "Fabric": legacy_fabric,
+    "Foil": legacy_foil,
+    "Ice": legacy_ice,
+}
+
 STUDS_PER_TILE = {
     "WoodPlanks": 8.0, "Brick": 8.0, "Cobblestone": 8.0, "Pavement": 8.0, "CeramicTiles": 8.0,
     "ClayRoofTiles": 8.0, "RoofShingles": 8.0, "DiamondPlate": 4.0, "Fabric": 2.0, "Carpet": 4.0,
@@ -313,14 +435,20 @@ def has_texture(name):
     return name in GENERATORS
 
 
+def is_legacy(name, legacy):
+    """Whether a legacy-material place shows a different texture for this material."""
+    return bool(legacy) and name in LEGACY_GENERATORS
+
+
 def studs_per_tile(name):
     return STUDS_PER_TILE.get(name, DEFAULT_STUDS_PER_TILE)
 
 
-@lru_cache(maxsize=48)
-def texture(name):
+@lru_cache(maxsize=64)
+def texture(name, legacy=False):
     """{"width", "height", "pixels"} RGBA8 rows top-down, like plugin textures."""
-    values = np.clip(GENERATORS[name](), 0.0, 1.0)
+    generator = LEGACY_GENERATORS[name] if is_legacy(name, legacy) else GENERATORS[name]
+    values = np.clip(generator(), 0.0, 1.0)
     gray = (values * 255 + 0.5).astype(np.uint8)
     rgba = np.empty((SIZE, SIZE, 4), dtype=np.uint8)
     rgba[..., :3] = gray[..., None]

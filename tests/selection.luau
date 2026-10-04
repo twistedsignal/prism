@@ -21,6 +21,7 @@ local modules = {
 	["./Data"] = { load = function() return {} end },
 	["./Types"] = {},
 	["./LightingSync"] = {},
+	["./MaterialStyle"] = { load = function() return "auto" end, save = function() end },
 	["./Base64"] = {},
 	["./Version"] = "test",
 	["./Serializer"] = {

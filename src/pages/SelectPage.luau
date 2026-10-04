@@ -1,7 +1,6 @@
 -- selene: allow(mixed_table)
 -- finds instances by path glob, with editor-style autocomplete, and selects them for rendering.
 const Selection = game:GetService("Selection")
-const UserInputService = game:GetService("UserInputService")
 const vide = require("../vide")
 const Theme = require("../components/Theme")
 const Button = require("../components/Button")
@@ -24,8 +23,7 @@ const ROW_HEIGHT = 26
 -- selecting this many models makes Prism load each one; say so before they click.
 const LARGE_SELECTION = 50
 const SEARCH_DELAY = 0.08
--- one Tab can arrive as a key press and as a typed "\t"; handle it once.
-const KEY_REPEAT_GUARD = 0.05
+const PLACEHOLDER = "ReplicatedStorage/Assets/Models/**"
 
 export type Filter = { label: string, accept: (Instance) -> boolean }
 
@@ -104,8 +102,6 @@ const function SelectPage(props: Props): Frame
 	const focused = source(false)
 	const hoveringList = source(false)
 	const completion = source(nil :: PathGlob.Completion?)
-	-- 0 means no suggestion was chosen with the arrow keys.
-	const highlighted = source(0)
 	const matches = source({} :: { Instance })
 	const truncated = source(false)
 	const searching = source(false)
@@ -132,7 +128,6 @@ const function SelectPage(props: Props): Frame
 				return
 			end
 			completion(suggestions)
-			highlighted(0)
 			const found, more = PathGlob.match(game, pattern, {
 				limit = MAX_MATCHES,
 				filter = filter.accept,
@@ -160,8 +155,6 @@ const function SelectPage(props: Props): Frame
 	end
 
 	local box: TextBox
-	local list: ScrollingFrame
-	local lastAccept = 0
 
 	const function setText(value: string)
 		query(value)
@@ -169,14 +162,12 @@ const function SelectPage(props: Props): Frame
 		box.CursorPosition = #value + 1
 	end
 
-	const function accept(index: number?)
-		const chosen = items()[index or math.max(highlighted(), 1)]
+	const function accept(index: number)
+		const chosen = items()[index]
 		if not chosen then
 			return
 		end
-		lastAccept = os.clock()
 		setText(chosen.insert)
-		highlighted(0)
 		-- clicking a suggestion takes focus from the box; give it back so typing continues.
 		if not box:IsFocused() then
 			task.defer(function()
@@ -186,58 +177,6 @@ const function SelectPage(props: Props): Frame
 		end
 	end
 
-	const function acceptTab()
-		if os.clock() - lastAccept > KEY_REPEAT_GUARD then
-			accept()
-		end
-	end
-
-	const function move(delta: number)
-		const count = #items()
-		if count == 0 then
-			return
-		end
-		const index = (highlighted() + delta - 1) % count + 1
-		highlighted(index)
-		-- keep the highlighted row inside the visible part of the list.
-		const top = (index - 1) * SUGGESTION_HEIGHT
-		const view = list.AbsoluteSize.Y
-		if top < list.CanvasPosition.Y then
-			list.CanvasPosition = Vector2.new(0, top)
-		elseif top + SUGGESTION_HEIGHT > list.CanvasPosition.Y + view then
-			list.CanvasPosition = Vector2.new(0, top + SUGGESTION_HEIGHT - view)
-		end
-	end
-
-	-- plugin widgets do not always forward keys to UserInputService, so listen on the box
-	-- too; a key reported by both arrives within the same frame and is handled once.
-	local lastKey: Enum.KeyCode? = nil
-	local lastKeyTime = 0
-	const function onKey(input: InputObject)
-		if input.UserInputType ~= Enum.UserInputType.Keyboard or not box:IsFocused() then
-			return
-		end
-		const key = input.KeyCode
-		if key == lastKey and os.clock() - lastKeyTime < KEY_REPEAT_GUARD then
-			return
-		end
-		lastKey, lastKeyTime = key, os.clock()
-		if key == Enum.KeyCode.Down then
-			move(1)
-		elseif key == Enum.KeyCode.Up then
-			move(-1)
-		elseif key == Enum.KeyCode.Tab then
-			acceptTab()
-		elseif key == Enum.KeyCode.Right and box.CursorPosition > #box.Text then
-			-- like a shell, → at the end of the line takes the inline suggestion.
-			const current = completion()
-			if current and current.ghost ~= "" then
-				accept(1)
-			end
-		end
-	end
-	cleanup(UserInputService.InputBegan:Connect(onKey))
-
 	box = new("TextBox")({
 		Name = "Path",
 		Size = UDim2.fromScale(1, 1),
@@ -245,14 +184,16 @@ const function SelectPage(props: Props): Frame
 		ClearTextOnFocus = false,
 		ClipsDescendants = true,
 		Text = vide.untrack(query),
-		PlaceholderText = "ReplicatedStorage/Content/**/Model",
+		-- while focused, the inline suggestion takes the placeholder's place.
+		PlaceholderText = function()
+			return if focused() then "" else PLACEHOLDER
+		end,
 		PlaceholderColor3 = Theme.SUBTLE,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = Theme.TEXT,
 		Font = Enum.Font.Code,
 		TextSize = 15,
 		ZIndex = 2,
-		InputBegan = onKey,
 		vide.changed("TextBounds", function(bounds: Vector2)
 			textWidth(bounds.X)
 		end),
@@ -262,19 +203,17 @@ const function SelectPage(props: Props): Frame
 		Focused = function()
 			focused(true)
 		end,
-		FocusLost = function(enterPressed: boolean)
+		FocusLost = function()
 			focused(false)
-			if enterPressed and highlighted() > 0 then
-				accept()
-			end
 		end,
 	}) :: TextBox
 	cleanup(box:GetPropertyChangedSignal("Text"):Connect(function()
 		const value = box.Text
 		if string.find(value, "\t", 1, true) then
-			-- Studio types Tab into the box; strip it and treat it as completion.
+			-- Studio keeps arrow keys from plugins, but types Tab into the box:
+			-- strip it and take the top suggestion.
 			box.Text = (string.gsub(value, "\t", ""))
-			acceptTab()
+			accept(1)
 			return
 		end
 		if value ~= vide.untrack(query) then
@@ -351,7 +290,7 @@ const function SelectPage(props: Props): Frame
 		}),
 	}) :: Frame
 
-	list = new("ScrollingFrame")({
+	const list = new("ScrollingFrame")({
 		Name = "Suggestions",
 		Position = UDim2.fromOffset(0, 58 + BOX_HEIGHT + 2),
 		Size = function()
@@ -384,7 +323,8 @@ const function SelectPage(props: Props): Frame
 				Size = UDim2.new(1, 0, 0, SUGGESTION_HEIGHT),
 				LayoutOrder = index,
 				BackgroundColor3 = function()
-					return if highlighted() == index() then Theme.BLUE_DARK else Theme.SECTION
+					-- the top suggestion is the one Tab takes.
+					return if index() == 1 then Theme.BLUE_DARK else Theme.SECTION
 				end,
 				BorderSizePixel = 0,
 				AutoButtonColor = true,
@@ -394,16 +334,34 @@ const function SelectPage(props: Props): Frame
 					accept(index())
 				end,
 
+				new("TextLabel")({
+					Name = "TabHint",
+					AnchorPoint = Vector2.new(1, 0.5),
+					Position = UDim2.new(1, -8, 0.5, 0),
+					Size = UDim2.fromOffset(30, 16),
+					BackgroundColor3 = Theme.BLUE,
+					BorderSizePixel = 0,
+					Visible = function()
+						return index() == 1
+					end,
+					Text = "Tab",
+					TextColor3 = Theme.TEXT,
+					Font = Enum.Font.SourceSansSemibold,
+					TextSize = 12,
+					ZIndex = 23,
+					new("UICorner")({ CornerRadius = UDim.new(0, 3) }),
+				}),
+
 				text({
 					text = item.name .. if item.hasChildren and item.name ~= "**" then "/" else "",
 					position = UDim2.fromOffset(10, 0),
-					size = UDim2.new(1, -150, 1, 0),
+					size = UDim2.new(1, -190, 1, 0),
 					color = Theme.TEXT,
 					zIndex = 22,
 				}),
 				text({
 					text = detail,
-					position = UDim2.new(1, -140, 0, 0),
+					position = UDim2.new(1, -180, 0, 0),
 					size = UDim2.new(0, 130, 1, 0),
 					color = Theme.SUBTLE,
 					textSize = 14,
@@ -479,7 +437,7 @@ const function SelectPage(props: Props): Frame
 		}),
 		text({
 			text = "Use / between names, * inside a name, ** for any depth and {a,b} for either name. "
-				.. "Tab or → accepts a suggestion; ↑ ↓ choose one.",
+				.. "Tab accepts the highlighted suggestion; click any other to use it.",
 			position = UDim2.fromOffset(0, 22),
 			size = UDim2.new(1, 0, 0, 32),
 			color = Theme.SUBTLE,

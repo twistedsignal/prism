@@ -27,9 +27,11 @@ def texture_of(width, height, value):
 
 class MaterialTextureTests(unittest.TestCase):
     def test_every_material_texture_tiles_and_stays_in_range(self):
-        for name in materials.GENERATORS:
-            with self.subTest(name=name):
-                data = materials.texture(name)
+        cases = [(name, False) for name in materials.GENERATORS]
+        cases += [(name, True) for name in materials.LEGACY_GENERATORS]
+        for name, legacy in cases:
+            with self.subTest(name=name, legacy=legacy):
+                data = materials.texture(name, legacy)
                 pixels = np.frombuffer(base64.b64decode(data["pixels"]), np.uint8).reshape(256, 256, 4)
                 self.assertTrue(np.all(pixels[..., 3] == 255))
                 gray = pixels[..., 0].astype(np.float32) / 255
@@ -38,6 +40,27 @@ class MaterialTextureTests(unittest.TestCase):
                 # Seamless: the wrap-around step is no larger than steps inside the tile.
                 inner = np.abs(np.diff(gray, axis=1)).max(axis=0).mean()
                 self.assertLessEqual(np.abs(gray[:, 0] - gray[:, -1]).mean(), inner * 2 + 0.02)
+
+    def test_no_material_looks_like_wood_grain(self):
+        # Grain is long streaks: rows stay similar along one axis but vary across it.
+        def gray(name):
+            pixels = np.frombuffer(base64.b64decode(materials.texture(name)["pixels"]), np.uint8)
+            return pixels.reshape(256, 256, 4)[..., 0].astype(np.float32) / 255
+
+        for name in ("Grass", "Slate", "Sandstone", "LeafyGrass"):
+            with self.subTest(name=name):
+                along = np.abs(np.diff(gray(name), axis=1)).mean()
+                across = np.abs(np.diff(gray(name), axis=0)).mean()
+                self.assertLess(max(along, across) / max(min(along, across), 1e-6), 3.0)
+        # Brushed metal has direction, but only as faint hairlines, never as broad bands.
+        metal = gray("Metal")
+        self.assertLess(max(metal.mean(axis=0).std(), metal.mean(axis=1).std()), 0.006)
+
+    def test_legacy_materials_only_change_materials_that_existed(self):
+        self.assertTrue(materials.is_legacy("Wood", True))
+        self.assertFalse(materials.is_legacy("Wood", False))
+        self.assertFalse(materials.is_legacy("Carpet", True), "Carpet was added with the 2022 materials")
+        self.assertNotEqual(materials.texture("Grass", True)["pixels"], materials.texture("Grass")["pixels"])
 
     def test_plain_materials_have_no_texture(self):
         for name in ("Plastic", "SmoothPlastic", "Neon", "Glass", "ForceField"):
@@ -62,6 +85,18 @@ class SceneMaterialTests(unittest.TestCase):
         uvs = self.uvs(obj)
         # An 8-stud face spans two 4-stud Wood tiles.
         self.assertAlmostEqual(np.ptp(uvs[:, 0]), 2.0, places=5)
+
+    def test_legacy_places_use_legacy_material_textures(self):
+        def detail(legacy):
+            directory = tempfile.TemporaryDirectory()
+            self.addCleanup(directory.cleanup)
+            payload = {"parts": [block({"name": "Grass"}), block({"name": "Carpet"})], "legacyMaterials": legacy}
+            scene.build(payload, directory.name)
+            return sorted(path.read_bytes() for path in Path(directory.name).glob("detail*.png"))
+
+        modern, legacy = detail(False), detail(True)
+        self.assertEqual(len(modern), 2)
+        self.assertEqual(len(set(modern) & set(legacy)), 1, "Only Grass has a legacy texture")
 
     def test_plastic_and_textured_parts_ignore_the_material(self):
         _, mtl, _ = self.build([block({"name": "Plastic"})])

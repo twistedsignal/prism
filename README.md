@@ -30,7 +30,7 @@ irm https://raw.githubusercontent.com/twistedsignal/prism/main/install.ps1 | iex
 2. Adjust the camera and settings. Drag the preview to orbit, scroll to zoom, or drag over text in the Blender preview to move it. Studio text follows your mouse, then the Blender render replaces it. Choose **This model** or **All** to set the editing scope.
 3. Click **Render** to save PNGs to your output folder. Click **Upload** to send them to Roblox as Decals. Prism shows the image IDs you can use in `ImageLabel.Image`.
 
-To pick models by path instead, open the **Select** tab and type a glob such as `ReplicatedStorage/Content/**/Model`. Use `/` between names, `*` and `?` inside a name, `**` for any depth, `[abc]` for character sets and `{Sword,Shield}` for alternatives. Matching ignores case, and `\` escapes a literal `/` or `*` in a name. Suggestions follow your typing like a code editor: press Tab or → to accept, or ↑ ↓ to choose another. Filter matches to Models, Parts, Folders or anything Prism can render, then click **Select** to replace the Studio selection or **Add** to extend it. Nested matches collapse into their outermost match, and a trailing `**` matches what is inside a folder, not the folder itself.
+To pick models by path instead, open the **Select** tab and type a glob such as `ReplicatedStorage/Assets/Models/**`. Use `/` between names, `*` and `?` inside a name, `**` for any depth, `[abc]` for character sets and `{Sword,Shield}` for alternatives. Matching ignores case, and `\` escapes a literal `/` or `*` in a name. Suggestions follow your typing like a code editor: press Tab to accept the highlighted one, or click any other. Studio keeps arrow keys from plugins, so they do not move through suggestions. Filter matches to Models, Parts, Folders or anything Prism can render, then click **Select** to replace the Studio selection or **Add** to extend it. Nested matches collapse into their outermost match, and a trailing `**` matches what is inside a folder, not the folder itself.
 
 The plugin has outlines, shadows, glow, color and depth effects, and text. Presets are saved locally. Prism also remembers a model's settings when you deselect and reselect it.
 
@@ -143,6 +143,8 @@ current edit scope. It estimates sun or moon direction and strength, ambient lig
 exposure, specular highlights and cast shadows for each model's pivot, stance and camera.
 This is a one-time sync; click again after changing the place lighting or the render view.
 Sky reflections, atmosphere, local lights and Roblox post-processing are not reproduced.
+
+Built-in materials such as Wood, Grass and Metal use Prism's own seamless textures, tinted by the part color; MaterialVariants use their real ColorMap. For places that turn off **MaterialService → Use2022Materials**, choose **Settings → Material style → Legacy (pre-2022)**. Studio hides that property from plugins, so **Automatic** uses 2022 materials unless Studio reports otherwise. The choice is saved per place. Legacy textures approximate the older look for materials that existed before 2022; newer materials look the same in both styles.
 
 Unions render from their serialized geometry, including stored colors when `UsePartColor` is off.
 Prism regenerates a temporary unparented Union to recover cloud-backed geometry, then destroys it.

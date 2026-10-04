@@ -7,6 +7,7 @@ const Types = require("./Types")
 const Base64 = require("./Base64")
 const Serializer = require("./Serializer")
 const LightingSync = require("./LightingSync")
+const MaterialStyle = require("./MaterialStyle")
 
 const source = vide.source
 
@@ -62,6 +63,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const activePreset = source(nil :: string?)
 	const notice = source(nil :: Notice?)
 	const auto3d = source(true)
+	const materialStyle = source("auto" :: MaterialStyle.Style)
 	const previewView = source("3d" :: "3d" | "blender")
 	local preferenceChanged = false
 	local previewRevision = 0
@@ -85,6 +87,10 @@ const function create(plugin: Plugin, bridge: Bridge)
 				previewView("blender")
 			end
 		end
+	end)
+
+	task.spawn(function()
+		materialStyle(MaterialStyle.load(plugin))
 	end)
 
 	local lastSettings: Types.Settings = {}
@@ -977,6 +983,21 @@ const function create(plugin: Plugin, bridge: Bridge)
 			task.spawn(function()
 				pcall(Data.save, plugin, AUTO_3D_KEY, value)
 			end)
+		end,
+		materialStyle = materialStyle,
+		setMaterialStyle = function(style: MaterialStyle.Style)
+			if style == vide.untrack(materialStyle) then
+				return
+			end
+			const before = Serializer.legacyMaterials()
+			materialStyle(style)
+			MaterialStyle.save(plugin, style)
+			-- only models whose built-in materials change need serializing again.
+			if Serializer.legacyMaterials() ~= before then
+				for _, model in models() do
+					refreshModel(model)
+				end
+			end
 		end,
 		previewVersion = previewVersion,
 		previewTextBounds = previewTextBounds,

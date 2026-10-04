@@ -13,6 +13,8 @@ const PERMISSION_TEXTURE_WARNING = "Texture has no readable pixels or downloadab
 
 export type Payload = {
 	warnings: { string }?,
+	-- the place shows Roblox's pre-2022 built-in materials.
+	legacyMaterials: boolean?,
 	name: string,
 	parts: { { [string]: any } },
 	textures: { [string]: { width: number, height: number, pixels: string } },
@@ -38,6 +40,26 @@ const SPECIAL_SHAPES = {
 	[Enum.MeshType.Wedge] = "wedge",
 	[Enum.MeshType.Head] = "head",
 }
+
+export type MaterialStyle = "auto" | "2022" | "legacy"
+
+local materialStyle: MaterialStyle = "auto"
+
+-- whether built-in materials use their pre-2022 look. Use2022Materials is usually
+-- hidden from plugins, so "auto" assumes 2022 materials when it cannot be read.
+const function legacyMaterials(): boolean
+	if materialStyle ~= "auto" then
+		return materialStyle == "legacy"
+	end
+	const ok, use2022 = pcall(function()
+		return (MaterialService :: any).Use2022Materials
+	end)
+	return ok and use2022 == false
+end
+
+const function setMaterialStyle(style: MaterialStyle)
+	materialStyle = style
+end
 
 const function isRoot(instance: Instance): boolean
 	return instance:IsA("Model") or instance:IsA("BasePart") or instance:IsA("Folder") or instance:IsA("Accessory")
@@ -616,6 +638,7 @@ const function serialize(root: Instance, onProgress: ((done: number, total: numb
 			name = root.Name,
 			parts = entries,
 			textures = context.textures,
+			legacyMaterials = legacyMaterials(),
 		},
 		warnings = context.warnings,
 	}
@@ -625,4 +648,6 @@ return {
 	getRoots = getRoots,
 	getParts = getParts,
 	serialize = serialize,
+	legacyMaterials = legacyMaterials,
+	setMaterialStyle = setMaterialStyle,
 }

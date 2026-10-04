@@ -90,6 +90,7 @@ local modules = {
     ['./vide'] = { source = source, effect = function() end },
     ['./Data'] = { load = function(_, _, fallback) return fallback end, save = function(_, _, value) saved = value end },
     ['./Types'] = {}, ['./Base64'] = {}, ['./Version'] = 'test',
+    ['./MaterialStyle'] = { load = function() return 'auto' end, save = function() end },
     ['./Serializer'] = { getParts = function(root) return root.parts end },
     ['./LightingSync'] = {
         capture = function()
