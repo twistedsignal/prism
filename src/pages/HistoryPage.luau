@@ -22,6 +22,7 @@ export type Props = {
 	store: Store.Store,
 	connected: () -> boolean,
 	filter: (number?) -> number,
+	onBack: () -> (),
 }
 
 const function formatTime(time: number): string
@@ -222,16 +223,21 @@ const function HistoryPage(props: Props): Frame
 		Size = UDim2.new(1, -24, 1, 0),
 		BackgroundTransparency = 1,
 
+		Button({
+			text = "‹ Settings",
+			size = UDim2.fromOffset(80, TOOLBAR_HEIGHT),
+			activated = props.onBack,
+		}),
 		Segmented({
 			options = FILTERS,
 			selected = props.filter,
 			onSelect = props.filter,
-			size = UDim2.fromOffset(240, TOOLBAR_HEIGHT - 4),
-			position = UDim2.fromOffset(0, 2),
+			size = UDim2.fromOffset(210, TOOLBAR_HEIGHT - 4),
+			position = UDim2.fromOffset(88, 2),
 		}),
 		new("TextLabel")({
-			Position = UDim2.fromOffset(252, 0),
-			Size = UDim2.new(1, -590, 0, TOOLBAR_HEIGHT),
+			Position = UDim2.fromOffset(310, 0),
+			Size = UDim2.new(1, -652, 0, TOOLBAR_HEIGHT),
 			BackgroundTransparency = 1,
 			Text = function()
 				const count = #entries()

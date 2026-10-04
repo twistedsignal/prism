@@ -115,7 +115,7 @@ const function App(props: Props): Frame
 		new("Frame")({
 			Name = "Status",
 			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(0.5, -248, 1, 0),
+			Size = UDim2.new(0.5, -200, 1, 0),
 			BackgroundTransparency = 1,
 
 			new("UIListLayout")({
@@ -242,7 +242,7 @@ const function App(props: Props): Frame
 		Name = "Tabs",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 12),
-		Size = UDim2.fromOffset(472, 32),
+		Size = UDim2.fromOffset(376, 32),
 		BackgroundTransparency = 1,
 		Parent = header,
 
@@ -267,16 +267,12 @@ const function App(props: Props): Frame
 		page("settings")
 	end)
 	settingsTab.button.LayoutOrder = 3
-	const historyTab = TabButton(tabs, "History", function()
-		page("history")
-	end)
-	historyTab.button.LayoutOrder = 4
 	effect(function()
 		renderTab.active(page() == "render")
 		selectTab.active(page() == "select")
 		templatesTab.active(page() == "templates")
-		settingsTab.active(page() == "settings")
-		historyTab.active(page() == "history")
+		-- history opens from settings, so settings stays highlighted there.
+		settingsTab.active(page() == "settings" or page() == "history")
 	end)
 
 	const footer = new("Frame")({
@@ -419,6 +415,9 @@ const function App(props: Props): Frame
 						store = store,
 						bridge = bridge,
 						pluginVersion = VERSION,
+						onOpenHistory = function()
+							page("history")
+						end,
 					})
 				end,
 				history = function()
@@ -426,6 +425,9 @@ const function App(props: Props): Frame
 						store = store,
 						connected = bridge.connected,
 						filter = historyFilter,
+						onBack = function()
+							page("settings")
+						end,
 					})
 				end,
 			}),

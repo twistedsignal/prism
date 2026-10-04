@@ -29,6 +29,7 @@ export type Props = {
 		refresh: () -> (),
 	},
 	pluginVersion: string,
+	onOpenHistory: () -> (),
 }
 
 const function heading(text: string, order: number): TextLabel
@@ -285,6 +286,19 @@ const function SettingsPage(props: Props): ScrollingFrame
 			end,
 		})),
 
+		new("Frame")({
+			Name = "History",
+			Size = UDim2.new(1, 0, 0, 44),
+			LayoutOrder = nextOrder(),
+			BackgroundTransparency = 1,
+
+			Button({
+				text = "Render and upload history",
+				position = UDim2.fromOffset(4, 14),
+				size = UDim2.new(1, -8, 0, 30),
+				activated = props.onOpenHistory,
+			}),
+		}),
 		new("Frame")({
 			Name = "About",
 			Size = UDim2.new(1, 0, 0, 70),

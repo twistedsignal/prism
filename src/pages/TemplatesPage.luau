@@ -384,16 +384,6 @@ const function TemplatesPage(props: Props): Frame
 		Size = UDim2.new(1, -24, 1, 0),
 		BackgroundTransparency = 1,
 
-		new("TextLabel")({
-			Size = UDim2.new(1, -40, 0, TOOLBAR_HEIGHT),
-			BackgroundTransparency = 1,
-			Text = "Fill in code with your uploads, then copy it or insert it into a script.",
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			TextColor3 = Theme.SUBTLE,
-			Font = Enum.Font.SourceSans,
-			TextSize = 14,
-		}),
 		Button({
 			name = "Help",
 			text = "?",
