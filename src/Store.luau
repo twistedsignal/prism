@@ -47,6 +47,16 @@ export type UploadResult = {
 	path: string?,
 	error: string?,
 }
+export type HistoryEntry = {
+	kind: "render" | "upload",
+	time: number,
+	name: string?,
+	path: string?,
+	assetId: string?,
+	imageId: string?,
+	moderation: string?,
+	creator: string?,
+}
 
 const function cloneSettings(settings: Types.Settings): Types.Settings
 	return table.clone(settings)
@@ -78,6 +88,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const update = source(nil :: UpdateInfo?)
 	const updateState = source("idle" :: UpdateState)
 	const installedVersion = source(nil :: string?)
+	const history = source({} :: { HistoryEntry })
 
 	task.spawn(function()
 		const ok, saved = pcall(Data.load, plugin, AUTO_3D_KEY, true)
@@ -675,6 +686,30 @@ const function create(plugin: Plugin, bridge: Bridge)
 	end
 
 	-- ---------------------------------------------------------------
+	-- history
+	-- ---------------------------------------------------------------
+
+	const function loadHistory()
+		task.spawn(function()
+			const response = bridge.request("GET", "/history")
+			if response.ok and type(response.body) == "table" and type(response.body.entries) == "table" then
+				history(response.body.entries)
+			end
+		end)
+	end
+
+	const function clearHistory()
+		task.spawn(function()
+			const response = bridge.request("DELETE", "/history")
+			if response.ok then
+				history({})
+			else
+				setNotice(response.error or "Could not clear the history", "error")
+			end
+		end)
+	end
+
+	-- ---------------------------------------------------------------
 	-- backend data
 	-- ---------------------------------------------------------------
 
@@ -711,6 +746,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 				queueThumbnail(model)
 			end
 		end
+		loadHistory()
 		requestPreview()
 	end
 
@@ -839,6 +875,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 			end
 			const response = bridge.request("POST", "/export", { items = payload })
 			busy(nil)
+			loadHistory()
 			if not response.ok then
 				setNotice(response.error or "Rendering failed", "error")
 				return
@@ -874,6 +911,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 			end
 			const response = bridge.request("POST", "/upload", { items = payload, creator = creator })
 			busy(nil)
+			loadHistory()
 			if not response.ok then
 				setNotice(response.error or "Upload failed", "error")
 				return
@@ -969,6 +1007,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 		update = update,
 		updateState = updateState,
 		installedVersion = installedVersion,
+		history = history,
+		loadHistory = loadHistory,
+		clearHistory = clearHistory,
 		checkForUpdate = checkForUpdate,
 		installUpdate = installUpdate,
 		auto3d = auto3d,

@@ -1,4 +1,4 @@
-"""Per-OS paths plus the JSON-backed server config and preset stores."""
+"""Per-OS paths plus the JSON-backed server config, preset and history stores."""
 
 import json
 import os
@@ -6,6 +6,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import schema
@@ -64,6 +65,8 @@ CONFIG_DEFAULTS = {
 }
 
 CREATOR_PATTERN = re.compile(r"^(user|group):\d+$")
+MAX_HISTORY = 500
+HISTORY_FIELDS = ("name", "path", "assetId", "imageId", "moderation", "creator")
 
 
 def normalize_config(values):
@@ -123,7 +126,7 @@ def write_json(path, value):
 
 
 class Store:
-    """Thread-safe access to config.json and presets.json."""
+    """Thread-safe access to config.json, presets.json and history.json."""
 
     def __init__(self, directory=None):
         self.directory = Path(directory) if directory else config_dir()
@@ -136,6 +139,10 @@ class Store:
     @property
     def presets_path(self):
         return self.directory / "presets.json"
+
+    @property
+    def history_path(self):
+        return self.directory / "history.json"
 
     def get_config(self):
         with self.lock:
@@ -183,3 +190,42 @@ class Store:
             del presets[name]
             write_json(self.presets_path, presets)
             return True
+
+    def get_history(self):
+        with self.lock:
+            history = read_json(self.history_path, [])
+        if not isinstance(history, list):
+            return []
+        return [entry for entry in history if isinstance(entry, dict)]
+
+    def record_history(self, kind, results, creator=None):
+        """Add successful render or upload results, newest first."""
+        now = int(time.time())
+        entries = []
+        for result in results:
+            if "error" in result and not result.get("path"):
+                continue
+            uploaded = kind == "upload" and bool(result.get("assetId"))
+            entry = {"kind": "upload" if uploaded else "render", "time": now}
+            if uploaded and creator:
+                entry["creator"] = creator
+            for key in HISTORY_FIELDS:
+                if isinstance(result.get(key), str) and result[key]:
+                    entry[key] = result[key]
+            entries.append(entry)
+        if not entries:
+            return
+        entries.reverse()
+        with self.lock:
+            history = read_json(self.history_path, [])
+            if not isinstance(history, list):
+                history = []
+            try:
+                write_json(self.history_path, (entries + history)[:MAX_HISTORY])
+            except OSError as error:
+                # History is a convenience; a full disk must not fail the render.
+                print(f"[prism] Could not save history: {error}", flush=True)
+
+    def clear_history(self):
+        with self.lock:
+            write_json(self.history_path, [])

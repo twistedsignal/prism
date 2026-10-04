@@ -9,6 +9,7 @@ const Overlay = require("./Overlay")
 const Serializer = require("./Serializer")
 const Store = require("./Store")
 const ModelChanges = require("./ModelChanges")
+const HistoryPage = require("./pages/HistoryPage")
 const RenderPage = require("./pages/RenderPage")
 const SelectPage = require("./pages/SelectPage")
 const SettingsPage = require("./pages/SettingsPage")
@@ -63,10 +64,11 @@ const function App(props: Props): Frame
 		end
 	end)
 
-	const page = source("render" :: "render" | "select" | "settings")
+	const page = source("render" :: "render" | "select" | "settings" | "history")
 	-- kept here so the search survives switching tabs.
 	const selectQuery = source("")
 	const selectFilter = source(1)
+	const historyFilter = source(1)
 	const rootSize = source(Vector2.new(720, 860))
 	local selectionToken = 0
 	const function importSelection()
@@ -112,7 +114,7 @@ const function App(props: Props): Frame
 		new("Frame")({
 			Name = "Status",
 			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(0.5, -170, 1, 0),
+			Size = UDim2.new(0.5, -224, 1, 0),
 			BackgroundTransparency = 1,
 
 			new("UIListLayout")({
@@ -239,7 +241,7 @@ const function App(props: Props): Frame
 		Name = "Tabs",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 12),
-		Size = UDim2.fromOffset(316, 32),
+		Size = UDim2.fromOffset(424, 32),
 		BackgroundTransparency = 1,
 		Parent = header,
 
@@ -260,10 +262,15 @@ const function App(props: Props): Frame
 		page("settings")
 	end)
 	settingsTab.button.LayoutOrder = 2
+	const historyTab = TabButton(tabs, "History", function()
+		page("history")
+	end)
+	historyTab.button.LayoutOrder = 3
 	effect(function()
 		renderTab.active(page() == "render")
 		selectTab.active(page() == "select")
 		settingsTab.active(page() == "settings")
+		historyTab.active(page() == "history")
 	end)
 
 	const footer = new("Frame")({
@@ -403,6 +410,13 @@ const function App(props: Props): Frame
 						store = store,
 						bridge = bridge,
 						pluginVersion = VERSION,
+					})
+				end,
+				history = function()
+					return HistoryPage({
+						store = store,
+						connected = bridge.connected,
+						filter = historyFilter,
 					})
 				end,
 			}),

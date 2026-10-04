@@ -279,6 +279,13 @@ def make_handler(bridge):
                 raise HttpError(404, "No preset with that name")
             return 200, {"presets": bridge.store.get_presets()}
 
+        def get_history(self):
+            return 200, {"entries": bridge.store.get_history()}
+
+        def delete_history(self):
+            bridge.store.clear_history()
+            return 200, {"entries": []}
+
         def post_scene(self):
             raw = self.read_body()
             self.read_json(raw)
@@ -306,6 +313,7 @@ def make_handler(bridge):
         def export(self):
             items = read_items(self.read_json())
             results = bridge.jobs.submit(lambda: bridge.export(items), timeout=RENDER_TIMEOUT * len(items))
+            bridge.store.record_history("render", results)
             return 200, {"results": results, "folder": bridge.store.get_config()["outputFolder"]}
 
         def upload(self):
@@ -330,6 +338,7 @@ def make_handler(bridge):
                     continue
                 # Open Cloud returns the Decal; ImageLabels need the image inside it.
                 result["imageId"] = resolver.decal_image_id(result["assetId"])
+            bridge.store.record_history("upload", results, creator)
             return 200, {"results": results, "creator": creator}
 
         def update_status(self):
@@ -396,6 +405,8 @@ def make_handler(bridge):
         ("GET", "/presets"): Handler.get_presets,
         ("PUT", "/presets/<name>"): Handler.put_preset,
         ("DELETE", "/presets/<name>"): Handler.delete_preset,
+        ("GET", "/history"): Handler.get_history,
+        ("DELETE", "/history"): Handler.delete_history,
         ("POST", "/scenes"): Handler.post_scene,
         ("POST", "/preview"): Handler.preview,
         ("POST", "/export"): Handler.export,
