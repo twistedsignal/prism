@@ -79,6 +79,7 @@ def run_raven(path, arguments, timeout=180):
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=timeout,
             env=raven_environment(path),
             check=False,

@@ -19,7 +19,7 @@ def session_environment():
         return env
     try:
         result = subprocess.run(["systemctl", "--user", "show-environment"],
-                                capture_output=True, text=True, timeout=5)
+                                capture_output=True, text=True, errors="replace", timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return env
     for line in result.stdout.splitlines():
@@ -63,7 +63,7 @@ def pick_folder(initial):
     else:
         return None
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=600, env=session_environment())
+        result = subprocess.run(command, capture_output=True, text=True, errors="replace", timeout=600, env=session_environment())
     except (OSError, subprocess.TimeoutExpired):
         return None
     chosen = result.stdout.strip()

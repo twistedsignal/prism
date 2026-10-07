@@ -33,7 +33,7 @@ def serve_command(blender=None, log=None):
 
 def run(command, check=True):
     print("[prism]", " ".join(command))
-    return subprocess.run(command, check=check, capture_output=True, text=True)
+    return subprocess.run(command, check=check, capture_output=True, text=True, errors="replace")
 
 
 # ============================================================
