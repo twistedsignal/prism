@@ -2,6 +2,7 @@
 const Selection = game:GetService("Selection")
 const vide = require("./vide")
 const Theme = require("./components/Theme")
+const Icons = require("./Icons")
 const TabButton = require("./components/TabButton")
 const Button = require("./components/Button")
 const StatusDot = require("./components/StatusDot")
@@ -115,7 +116,7 @@ const function App(props: Props): Frame
 		new("Frame")({
 			Name = "Status",
 			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(0.5, -200, 1, 0),
+			Size = UDim2.new(0.5, -80, 1, 0),
 			BackgroundTransparency = 1,
 
 			new("UIListLayout")({
@@ -123,10 +124,16 @@ const function App(props: Props): Frame
 				VerticalAlignment = Enum.VerticalAlignment.Center,
 				Padding = UDim.new(0, 8),
 			}),
-			StatusDot(bridge.connected),
+			StatusDot(bridge.connected, store.showStatusDot),
 			-- offline: click through to the troubleshooting help in settings.
 			new("TextButton")({
-				Size = UDim2.new(1, -16, 1, 0),
+				Name = "BlenderVersion",
+				Size = function()
+					return UDim2.new(1, if store.showStatusDot() then -16 else 0, 1, 0)
+				end,
+				Visible = function()
+					return not bridge.connected() or store.showBlenderVersion()
+				end,
 				BackgroundTransparency = 1,
 				AutoButtonColor = false,
 				Active = function()
@@ -252,7 +259,7 @@ const function App(props: Props): Frame
 		Name = "Tabs",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 12),
-		Size = UDim2.fromOffset(376, 32),
+		Size = UDim2.fromOffset(112, 32),
 		BackgroundTransparency = 1,
 		Parent = header,
 
@@ -262,21 +269,22 @@ const function App(props: Props): Frame
 			Padding = UDim.new(0, 8),
 		}),
 	})
-	const renderTab = TabButton(tabs, "Render", function()
+	const renderTab = TabButton(tabs, "Render", Icons.camera, function()
 		page("render")
 	end)
-	const selectTab = TabButton(tabs, "Select", function()
+	const selectTab = TabButton(tabs, "Select", Icons.select, function()
 		page("select")
 	end)
 	selectTab.button.LayoutOrder = 1
-	const templatesTab = TabButton(tabs, "Templates", function()
+	const templatesTab = TabButton(tabs, "Templates", Icons.templates, function()
 		page("templates")
 	end)
 	templatesTab.button.LayoutOrder = 2
-	const settingsTab = TabButton(tabs, "Settings", function()
+	const settingsTab = TabButton(header, "Settings", Icons.settings, function()
 		page("settings")
 	end)
-	settingsTab.button.LayoutOrder = 3
+	settingsTab.button.AnchorPoint = Vector2.new(1, 0)
+	settingsTab.button.Position = UDim2.new(1, -12, 0, 12)
 	effect(function()
 		renderTab.active(page() == "render")
 		selectTab.active(page() == "select")

@@ -4,9 +4,10 @@ const Theme = require("./Theme")
 
 const new = vide.create
 
-const function StatusDot(connected: () -> boolean): Frame
+const function StatusDot(connected: () -> boolean, visible: (() -> boolean)?): Frame
 	return new("Frame")({
 		Name = "StatusDot",
+		Visible = visible,
 		Size = UDim2.fromOffset(8, 8),
 		BackgroundColor3 = function()
 			return if connected() then Theme.GREEN else Theme.RED

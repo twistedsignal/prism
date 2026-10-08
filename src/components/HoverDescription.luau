@@ -8,12 +8,13 @@ export type Props = {
 	root: Frame,
 	target: GuiObject,
 	text: string,
+	width: number?,
 }
 
 const function HoverDescription(props: Props): TextLabel
 	const description = new("TextLabel")({
 		Name = "HoverDescription",
-		Size = UDim2.new(1, -24, 0, 0),
+		Size = UDim2.new(if props.width then 0 else 1, props.width or -24, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Position = UDim2.fromOffset(12, 0),
 		BackgroundColor3 = Theme.SECTION,

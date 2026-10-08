@@ -81,6 +81,29 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const mode = source("all" :: Mode)
 	const activePreset = source(nil :: string?)
 	const notice = source(nil :: Notice?)
+	-- Header preferences are plugin-local and remain editable without the backend.
+	const function booleanPreference(key: string)
+		const value = source(true)
+		local changed = false
+		task.spawn(function()
+			const ok, saved = pcall(Data.load, plugin, key, true)
+			if ok and type(saved) == "boolean" and not changed then
+				value(saved)
+			end
+		end)
+		return value, function(nextValue: boolean)
+			changed = true
+			value(nextValue)
+			task.spawn(function()
+				const ok, message = pcall(Data.save, plugin, key, nextValue)
+				if not ok then
+					notice({ text = `Could not save the display preference: {message}`, kind = "error" })
+				end
+			end)
+		end
+	end
+	const showBlenderVersion, setShowBlenderVersion = booleanPreference("PrismShowBlenderVersion")
+	const showStatusDot, setShowStatusDot = booleanPreference("PrismShowStatusDot")
 	const auto3d = source(true)
 	const materialStyle = source("auto" :: MaterialStyle.Style)
 	const previewView = source("3d" :: "3d" | "blender")
@@ -1261,6 +1284,10 @@ const function create(plugin: Plugin, bridge: Bridge)
 		clearHistory = clearHistory,
 		checkForUpdate = checkForUpdate,
 		installUpdate = installUpdate,
+		showBlenderVersion = showBlenderVersion,
+		setShowBlenderVersion = setShowBlenderVersion,
+		showStatusDot = showStatusDot,
+		setShowStatusDot = setShowStatusDot,
 		auto3d = auto3d,
 		previewView = previewView,
 		setAuto3d = function(value: boolean)

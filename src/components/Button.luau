@@ -17,6 +17,7 @@ export type Props = {
 	enabled: (() -> boolean)?,
 	activated: () -> (),
 	name: string?,
+	icon: string?,
 }
 
 const COLORS = {
@@ -45,7 +46,7 @@ const function Button(props: Props): TextButton
 			return if enabled() then 0 else 0.45
 		end,
 		BorderSizePixel = 0,
-		Text = props.text,
+		Text = if props.icon then "" else props.text,
 		TextColor3 = Theme.TEXT,
 		TextTransparency = function()
 			return if enabled() then 0 else 0.4
@@ -66,6 +67,27 @@ const function Button(props: Props): TextButton
 			end
 		end,
 
+		if props.icon then new("ImageLabel")({
+			Name = "Icon",
+			Size = UDim2.fromOffset(18, 18),
+			Position = UDim2.new(0, 10, 0.5, -9),
+			BackgroundTransparency = 1,
+			Image = props.icon,
+			ImageColor3 = Theme.TEXT,
+		}) else nil,
+		if props.icon then new("TextLabel")({
+			Name = "Label",
+			Size = UDim2.new(1, -44, 1, 0),
+			Position = UDim2.fromOffset(34, 0),
+			BackgroundTransparency = 1,
+			Text = props.text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextColor3 = Theme.TEXT,
+			TextTransparency = function() return if enabled() then 0 else 0.4 end,
+			Font = Enum.Font.SourceSansSemibold,
+			TextSize = props.textSize or 15,
+		}) else nil,
 		Theme.stroke(colors.border),
 		new("UICorner")({ CornerRadius = UDim.new(0, 4) }),
 	}) :: TextButton

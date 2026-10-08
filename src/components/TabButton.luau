@@ -1,33 +1,45 @@
 -- selene: allow(mixed_table)
 const vide = require("../vide")
 const Theme = require("./Theme")
+const HoverDescription = require("./HoverDescription")
+const Overlay = require("../Overlay")
 
 const new = vide.create
 const source = vide.source
 const effect = vide.effect
 
 export type TabButton = {
-	button: TextButton,
+	button: ImageButton,
 	active: (boolean?) -> boolean,
 }
 
-const function TabButton(parent: Instance, text: string, activated: (() -> ())?): TabButton
+const function TabButton(parent: Instance, text: string, icon: string, activated: (() -> ())?): TabButton
 	const active = source(false)
 	local indicator: Frame
-	const button = new("TextButton")({
+	local image: ImageLabel
+	const button = new("ImageButton")({
 		Name = `{text}Tab`,
-		Size = UDim2.new(0, 88, 1, 0),
+		Size = UDim2.fromOffset(32, 32),
 		BackgroundColor3 = Theme.ROW_ALT,
 		BorderSizePixel = 0,
-		Text = text,
-		TextColor3 = Theme.MUTED,
-		Font = Enum.Font.SourceSansBold,
-		TextSize = 15,
+		Image = "",
 		AutoButtonColor = true,
 		Activated = activated,
 		Parent = parent,
 
 		Theme.stroke(Theme.BORDER),
+		new("ImageLabel")({
+			Name = "Icon",
+			Size = UDim2.fromOffset(20, 20),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			BackgroundTransparency = 1,
+			Image = icon,
+			ImageColor3 = Theme.MUTED,
+			vide.action(function(instance)
+				image = instance :: ImageLabel
+			end),
+		}),
 		new("Frame")({
 			Name = "Indicator",
 			Size = UDim2.new(1, 0, 0, 3),
@@ -39,19 +51,17 @@ const function TabButton(parent: Instance, text: string, activated: (() -> ())?)
 				indicator = instance :: Frame
 			end),
 		}),
-	}) :: TextButton
+	}) :: ImageButton
 
+	HoverDescription({ root = Overlay.layer(), target = button, text = text, width = #text * 8 + 28 })
 	effect(function()
 		const isActive = active()
 		button.BackgroundColor3 = if isActive then Theme.SECTION else Theme.ROW_ALT
-		button.TextColor3 = if isActive then Theme.TEXT else Theme.MUTED
+		image.ImageColor3 = if isActive then Theme.TEXT else Theme.MUTED
 		indicator.BackgroundTransparency = if isActive then 0 else 1
 	end)
 
-	return {
-		button = button,
-		active = active,
-	}
+	return { button = button, active = active }
 end
 
 return TabButton

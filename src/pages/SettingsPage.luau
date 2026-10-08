@@ -4,6 +4,7 @@ const UserInputService = game:GetService("UserInputService")
 const vide = require("../vide")
 const Bridge = require("../Bridge")
 const Theme = require("../components/Theme")
+const Icons = require("../Icons")
 const Button = require("../components/Button")
 const TextBoxSetting = require("../components/TextBoxSetting")
 const ToggleSetting = require("../components/ToggleSetting")
@@ -291,6 +292,23 @@ const function SettingsPage(props: Props): ScrollingFrame
 			onChange = store.setAuto3d,
 		})),
 
+		row(ToggleSetting({
+			name = "Blender version label",
+			index = 1,
+			labelWidth = 0.5,
+			description = "Show the Blender version in the top bar. Offline troubleshooting remains available.",
+			value = store.showBlenderVersion,
+			onChange = store.setShowBlenderVersion,
+		})),
+		row(ToggleSetting({
+			name = "Connection status dot",
+			index = 2,
+			labelWidth = 0.5,
+			description = "Show the green or red connection status circle in the top bar.",
+			value = store.showStatusDot,
+			onChange = store.setShowStatusDot,
+		})),
+
 		row(DropdownSetting({
 			name = "Emoji provider",
 			index = 1,
@@ -473,6 +491,7 @@ const function SettingsPage(props: Props): ScrollingFrame
 
 			Button({
 				text = "Render and upload history",
+				icon = Icons.history,
 				position = UDim2.fromOffset(4, 14),
 				size = UDim2.new(1, -8, 0, 30),
 				activated = props.onOpenHistory,
