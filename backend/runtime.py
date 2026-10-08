@@ -68,6 +68,22 @@ def serve_command(log=None):
     return command
 
 
+def windows_log():
+    return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Prism" / "prism.log"
+
+
+def spawn_server():
+    """Start a detached backend outside any service manager."""
+    command = serve_command()
+    if sys.platform == "win32":
+        command += ["--log", str(windows_log())]
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen(command, creationflags=flags, close_fds=True)
+    else:
+        subprocess.Popen(command, start_new_session=True, close_fds=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def restart_windows_task():
     # Let the current task exit before /Run, since its policy ignores overlaps.
     python = settings().get("python", sys.executable)

@@ -253,15 +253,7 @@ def restart():
     if not managed:
         import runtime
 
-        command = runtime.serve_command()
-        if sys.platform == "win32":
-            log = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Prism" / "prism.log"
-            command += ["--log", str(log)]
-            flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-            subprocess.Popen(command, creationflags=flags, close_fds=True)
-        else:
-            subprocess.Popen(command, start_new_session=True, close_fds=True,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        runtime.spawn_server()
         sys.stdout.flush()
         os._exit(0)
     sys.stdout.flush()

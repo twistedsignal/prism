@@ -24,6 +24,7 @@ export type Bridge = {
 	renderProgress: () -> Types.RenderProgress?,
 	request: (method: string, path: string, body: any?) -> Response,
 	setPort: (number) -> (),
+	resetPort: () -> (),
 	setActive: (boolean) -> (),
 	refresh: () -> (),
 	destroy: () -> (),
@@ -45,9 +46,9 @@ const function create(plugin: Plugin): Bridge
 	local active = true
 	local wake: thread? = nil
 
-	const function request(method: string, path: string, body: any?): Response
+	const function request(method: string, path: string, body: any?, overridePort: number?): Response
 		const options: { [string]: any } = {
-			Url = `http://127.0.0.1:{port()}{path}`,
+			Url = `http://127.0.0.1:{overridePort or port()}{path}`,
 			Method = method,
 			Headers = {
 				["X-Prism"] = "1",
@@ -86,9 +87,35 @@ const function create(plugin: Plugin): Bridge
 		}
 	end
 
+	const function savePort(value: number)
+		port(value)
+		plugin:SetSetting(PORT_SETTING, value)
+	end
+
+	const function isStatus(response: Response): boolean
+		return response.ok and type(response.body) == "table" and type(response.body.version) == "string"
+	end
+
 	const function refresh()
-		const response = request("GET", "/status")
-		if response.ok and type(response.body) == "table" then
+		local response = request("GET", "/status")
+		-- a stale saved port hides a backend still on the default one; switch back to it.
+		if not response.ok and port() ~= DEFAULT_PORT then
+			const fallback = request("GET", "/status", nil, DEFAULT_PORT)
+			if isStatus(fallback) then
+				savePort(DEFAULT_PORT)
+				response = fallback
+			elseif response.error and lastError() ~= response.error then
+				lastError(response.error)
+			end
+		end
+		if not isStatus(response) and response.status ~= 0 then
+			-- something answered, but it isn't prism.
+			const message = `Port {port()} answered with HTTP {response.status}. Another program may be using it.`
+			if lastError() ~= message then
+				lastError(message)
+			end
+		end
+		if isStatus(response) then
 			const status = response.body :: Types.Status
 			blender(status.blender)
 			version(status.version)
@@ -138,8 +165,11 @@ const function create(plugin: Plugin): Bridge
 		renderProgress = renderProgress,
 		request = request,
 		setPort = function(value: number)
-			port(value)
-			plugin:SetSetting(PORT_SETTING, value)
+			savePort(value)
+			task.spawn(refresh)
+		end,
+		resetPort = function()
+			savePort(DEFAULT_PORT)
 			task.spawn(refresh)
 		end,
 		setActive = function(value: boolean)

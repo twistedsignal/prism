@@ -2,6 +2,7 @@
 
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -128,7 +129,7 @@ def uninstall_macos():
 # ============================================================
 
 def install_windows(blender, start=True):
-    log = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Prism" / "prism.log"
+    log = runtime.windows_log()
     log.parent.mkdir(parents=True, exist_ok=True)
     command = serve_command(blender, log) + ["--managed"]
     arguments = subprocess.list2cmdline(command[1:])
@@ -188,6 +189,45 @@ def install(blender=None, raven=None, creator=None, start=True):
     else:
         install_linux(blender, start)
     print("[prism] Startup entry installed")
+
+
+def start():
+    """Start the backend now: through its startup entry, or directly if there is none."""
+    quiet = {"capture_output": True, "text": True, "errors": "replace"}
+    if sys.platform == "win32":
+        if subprocess.run(["schtasks", "/Run", "/TN", TASK_NAME], **quiet).returncode == 0:
+            return "Task Scheduler"
+    elif sys.platform == "darwin":
+        plist = launch_agent_path()
+        if plist.exists():
+            domain = f"gui/{os.getuid()}"
+            subprocess.run(["launchctl", "bootstrap", domain, str(plist)], **quiet)
+            if subprocess.run(["launchctl", "kickstart", "-k", f"{domain}/{LAUNCH_AGENT}"], **quiet).returncode == 0:
+                return "launchd"
+    elif systemd_unit_path().exists() and shutil.which("systemctl"):
+        unit = f"{SERVICE_NAME}.service"
+        subprocess.run(["systemctl", "--user", "reset-failed", unit], **quiet)
+        if subprocess.run(["systemctl", "--user", "restart", unit], **quiet).returncode == 0:
+            return "systemd"
+    runtime.spawn_server()
+    return "direct"
+
+
+def logs(lines=50):
+    """The backend's recent output and where it came from."""
+    if sys.platform == "win32" or sys.platform == "darwin":
+        path = runtime.windows_log() if sys.platform == "win32" else Path.home() / "Library" / "Logs" / "Prism.log"
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return str(path), ""
+        return str(path), "\n".join(text.splitlines()[-lines:])
+    command = ["journalctl", "--user", "-u", f"{SERVICE_NAME}.service", "-n", str(lines), "--no-pager", "-o", "cat"]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, errors="replace")
+    except OSError:
+        return " ".join(command), ""
+    return " ".join(command), (result.stdout or result.stderr).rstrip()
 
 
 def uninstall():

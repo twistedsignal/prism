@@ -124,14 +124,24 @@ const function App(props: Props): Frame
 				Padding = UDim.new(0, 8),
 			}),
 			StatusDot(bridge.connected),
-			new("TextLabel")({
+			-- offline: click through to the troubleshooting help in settings.
+			new("TextButton")({
 				Size = UDim2.new(1, -16, 1, 0),
 				BackgroundTransparency = 1,
+				AutoButtonColor = false,
+				Active = function()
+					return not bridge.connected()
+				end,
+				Activated = function()
+					if not bridge.connected() then
+						page("settings")
+					end
+				end,
 				Text = function()
 					if not bridge.connected() then
 						return if bridge.httpBlocked()
-							then "HTTP access blocked"
-							else "Bridge offline"
+							then "HTTP access blocked · Fix"
+							else "Backend offline · Fix"
 					end
 					return `Blender {string.match(bridge.blender() or "", "^[%d%.]+") or "?"}`
 				end,

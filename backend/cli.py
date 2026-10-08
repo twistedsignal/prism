@@ -27,6 +27,7 @@ Inspect a timed-out job with prism job JOB_ID --json. Never automatically resubm
 Commands return JSON; progress goes to stderr. Exit 0 means success, 1 means failure or partial failure, 2 means waiting timed out.
 Options never change saved preferences or panel settings. Output files are not overwritten.
 If no Studio session is available, open Studio and allow Prism localhost HTTP access. Restart Studio after upgrading the plugin.
+If the backend is unavailable, run prism start; prism logs shows its recent output.
 """
 
 
@@ -71,7 +72,7 @@ class Client:
 def parser():
     root = argparse.ArgumentParser(prog="prism", description="Render live Studio models without changing selection or preferences")
     commands = root.add_subparsers(dest="command", required=True)
-    for name in ("status", "sessions", "models", "schema", "fonts", "presets", "render", "upload", "batch", "job", "agent"):
+    for name in ("status", "start", "logs", "sessions", "models", "schema", "fonts", "presets", "render", "upload", "batch", "job", "agent"):
         cmd = commands.add_parser(name)
         cmd.add_argument("--json", action="store_true", help="Print structured JSON (also the default for results)")
         cmd.add_argument("--port", type=int, help="Override the configured local backend port")
@@ -99,6 +100,10 @@ def parser():
             cmd.add_argument("--name")
         if name == "batch":
             cmd.add_argument("manifest", type=Path)
+        if name == "start":
+            cmd.add_argument("--timeout", type=float, default=20, help="Seconds to wait for the backend to answer")
+        if name == "logs":
+            cmd.add_argument("--lines", type=int, default=50)
         if name == "job":
             cmd.add_argument("id")
             cmd.add_argument("--wait", action="store_true")
@@ -116,6 +121,27 @@ def absolute_outputs(body):
     if "outputDir" in body:
         body["outputDir"] = str(Path(body["outputDir"]).expanduser().resolve())
     return body
+
+
+def start(client, timeout):
+    """Start the backend if it isn't answering, then wait until it does."""
+    try:
+        return dict(client.request("GET", "/status"), port=client.port, started=False), 0
+    except RuntimeError:
+        pass
+    import autostart
+    method = autostart.start()
+    print(f"Starting the Prism backend through {method}; waiting up to {timeout:.0f}s", file=sys.stderr)
+    end = time.monotonic() + timeout
+    while True:
+        try:
+            return dict(client.request("GET", "/status"), port=client.port, started=True, method=method), 0
+        except RuntimeError as error:
+            if time.monotonic() >= end:
+                source, text = autostart.logs(20)
+                return {"error": f"The backend did not answer on port {client.port}: {error}",
+                        "method": method, "logSource": source, "log": text}, 1
+        time.sleep(0.5)
 
 
 def execute(args):
@@ -136,7 +162,13 @@ def execute(args):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(content, encoding="utf-8")
         return {"path": str(destination)}, 0
+    if args.command == "logs":
+        import autostart
+        source, text = autostart.logs(args.lines)
+        return {"source": source, "log": text}, 0
     client = Client(args.port)
+    if args.command == "start":
+        return start(client, args.timeout)
     if args.command == "status":
         import cli_install
         result = client.request("GET", "/status")
@@ -194,6 +226,10 @@ def main(argv=None):
         result, code = execute(args)
     except (OSError, ValueError, RuntimeError, TypeError) as error:
         result, code = {"error": str(error)}, 1
+    if args.command == "logs" and not args.json and "log" in result:
+        print(f"# {result['source']}", file=sys.stderr)
+        print(result["log"] or "(no output yet)")
+        return code
     print(json.dumps(result, ensure_ascii=False))
     return code
 

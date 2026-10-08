@@ -1,6 +1,8 @@
 -- selene: allow(mixed_table)
 -- backend settings: output folder, render sizes, tool paths and the bridge port.
+const UserInputService = game:GetService("UserInputService")
 const vide = require("../vide")
+const Bridge = require("../Bridge")
 const Theme = require("../components/Theme")
 const Button = require("../components/Button")
 const TextBoxSetting = require("../components/TextBoxSetting")
@@ -21,6 +23,7 @@ export type Props = {
 	bridge: {
 		port: () -> number,
 		setPort: (number) -> (),
+		resetPort: () -> (),
 		connected: () -> boolean,
 		httpBlocked: () -> boolean,
 		lastError: () -> string?,
@@ -49,6 +52,63 @@ const function heading(text: string, order: number): TextLabel
 	}) :: TextLabel
 end
 
+-- how to start the backend and where its log is, for the os studio runs on.
+const function startHelp(): { command: string, logs: string }
+	const ok, platform = pcall(function()
+		return UserInputService:GetPlatform()
+	end)
+	if ok and platform == Enum.Platform.Windows then
+		-- vinegar reports windows too, so mention the linux command.
+		return {
+			command = '& "$env:LOCALAPPDATA\\Prism\\bin\\prism.cmd" start',
+			logs = "%LOCALAPPDATA%\\Prism\\prism.log. On Linux with Vinegar, run ~/.local/bin/prism start instead",
+		}
+	elseif ok and platform == Enum.Platform.OSX then
+		return { command = "~/.local/bin/prism start", logs = "~/Library/Logs/Prism.log" }
+	end
+	return { command = "~/.local/bin/prism start", logs = "journalctl --user -u prism" }
+end
+
+const function at<T>(layoutOrder: number, instance: T & GuiObject): T
+	instance.LayoutOrder = layoutOrder
+	return instance
+end
+
+const function paragraph(text: () -> string, color: Color3, bold: boolean?): TextLabel
+	return new("TextLabel")({
+		Size = UDim2.fromScale(1, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Text = text,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = color,
+		Font = if bold then Enum.Font.SourceSansBold else Enum.Font.SourceSans,
+		TextSize = 15,
+	}) :: TextLabel
+end
+
+-- read-only, so it can be selected and copied.
+const function copyable(text: () -> string): TextBox
+	return new("TextBox")({
+		Size = UDim2.new(1, 0, 0, 26),
+		BackgroundColor3 = Theme.INPUT,
+		BorderSizePixel = 0,
+		ClearTextOnFocus = false,
+		TextEditable = false,
+		ClipsDescendants = true,
+		Text = text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextColor3 = Theme.TEXT,
+		Font = Enum.Font.Code,
+		TextSize = 14,
+
+		Theme.stroke(Theme.BORDER),
+		new("UIPadding")({ PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }),
+	}) :: TextBox
+end
+
 const function options(values: { any }, suffix: string): () -> { { label: string, value: any } }
 	return function()
 		const list = {}
@@ -57,6 +117,102 @@ const function options(values: { any }, suffix: string): () -> { { label: string
 		end
 		return list
 	end
+end
+
+-- shown while the backend is unreachable: what's wrong and how to fix it.
+const function ConnectionHelp(bridge: any, reconnect: () -> (), layoutOrder: number)
+	const help = startHelp()
+	return vide.show(function()
+		return not bridge.connected()
+	end, function()
+		return new("Frame")({
+			Name = "ConnectionHelp",
+			Size = UDim2.fromScale(1, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			LayoutOrder = layoutOrder,
+			BackgroundTransparency = 1,
+
+			new("UIPadding")({ PaddingTop = UDim.new(0, 10) }),
+			new("Frame")({
+				Size = UDim2.fromScale(1, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundColor3 = Color3.fromRGB(46, 30, 32),
+				BorderSizePixel = 0,
+
+				Theme.stroke(Color3.fromRGB(96, 44, 46)),
+				new("UICorner")({ CornerRadius = UDim.new(0, 6) }),
+				new("UIPadding")({
+					PaddingLeft = UDim.new(0, 12),
+					PaddingRight = UDim.new(0, 12),
+					PaddingTop = UDim.new(0, 10),
+					PaddingBottom = UDim.new(0, 12),
+				}),
+				new("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) }),
+
+				at(1, paragraph(function()
+					return if bridge.httpBlocked()
+						then "Studio blocked Prism's HTTP access"
+						else `Prism can't reach its backend on 127.0.0.1:{bridge.port()}`
+				end, Theme.TEXT, true)),
+				at(2, paragraph(function()
+					if bridge.httpBlocked() then
+						return "Open Plugins → Manage Plugins, find Prism and allow 127.0.0.1. Then click Reconnect."
+					end
+					return "Render settings, previews and uploads need the backend, a small program on your computer "
+						.. "that runs Blender. It starts at login, but Studio can't start it for you. "
+						.. "Run this in a terminal to start it and see why it failed:"
+				end, Theme.MUTED)),
+				vide.show(function()
+					return not bridge.httpBlocked()
+				end, function()
+					return at(3, copyable(function()
+						return help.command
+					end))
+				end),
+				vide.show(function()
+					return not bridge.httpBlocked()
+				end, function()
+					return at(4, paragraph(function()
+						return `If prism isn't found or the backend stops again, run the installer again. `
+							.. `prism logs shows recent output. Logs: {help.logs}`
+					end, Theme.MUTED))
+				end),
+				vide.show(bridge.lastError, function()
+					return at(5, paragraph(function()
+						return "Last error:"
+					end, Theme.SUBTLE))
+				end),
+				vide.show(bridge.lastError, function()
+					return at(6, copyable(function()
+						return bridge.lastError() or ""
+					end))
+				end),
+				new("Frame")({
+					Name = "Actions",
+					Size = UDim2.new(1, 0, 0, 30),
+					LayoutOrder = 100,
+					BackgroundTransparency = 1,
+
+					Button({
+						text = "Reconnect",
+						variant = "accent",
+						size = UDim2.fromOffset(110, 28),
+						position = UDim2.fromOffset(0, 2),
+						activated = reconnect,
+					}),
+					Button({
+						text = `Use default port ({Bridge.DEFAULT_PORT})`,
+						size = UDim2.fromOffset(190, 28),
+						position = UDim2.fromOffset(118, 2),
+						enabled = function()
+							return bridge.port() ~= Bridge.DEFAULT_PORT
+						end,
+						activated = bridge.resetPort,
+					}),
+				}),
+			}),
+		})
+	end)
 end
 
 const function SettingsPage(props: Props): ScrollingFrame
@@ -75,6 +231,27 @@ const function SettingsPage(props: Props): ScrollingFrame
 		return function(value: string)
 			store.updateConfig({ [key] = value })
 		end
+	end
+
+	const function reconnect()
+		task.spawn(function()
+			props.bridge.refresh()
+			if props.bridge.connected() then
+				store.reload()
+				store.setNotice("Connected to the Prism backend.", "success")
+			elseif props.bridge.httpBlocked() then
+				store.setNotice(
+					"Studio blocked Prism's HTTP access. Allow 127.0.0.1 for Prism under Plugins → Manage Plugins.",
+					"error"
+				)
+			else
+				const detail = props.bridge.lastError()
+				store.setNotice(
+					`No backend on port {props.bridge.port()}.{if detail then ` ({detail})` else ""}`,
+					"error"
+				)
+			end
+		end)
 	end
 
 	local order = 0
@@ -101,6 +278,8 @@ const function SettingsPage(props: Props): ScrollingFrame
 		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
 
 		new("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
+
+		ConnectionHelp(props.bridge, reconnect, nextOrder()),
 
 		heading("Plugin", nextOrder()),
 		row(ToggleSetting({
@@ -346,26 +525,7 @@ const function SettingsPage(props: Props): ScrollingFrame
 				size = UDim2.fromOffset(124, 28),
 				position = UDim2.new(1, -4, 0, 10),
 				anchorPoint = Vector2.new(1, 0),
-				activated = function()
-					task.spawn(function()
-						props.bridge.refresh()
-						if props.bridge.connected() then
-							store.reload()
-							store.setNotice("Connected to the Prism backend.", "success")
-						elseif props.bridge.httpBlocked() then
-							store.setNotice(
-								"Studio blocked Prism's HTTP access. Allow 127.0.0.1 for Prism under Plugins → Manage Plugins.",
-								"error"
-							)
-						else
-							const detail = props.bridge.lastError()
-							store.setNotice(
-								`No backend on port {props.bridge.port()}.{if detail then ` ({detail})` else ""}`,
-								"error"
-							)
-						end
-					end)
-				end,
+				activated = reconnect,
 			}),
 		}),
 	}) :: ScrollingFrame

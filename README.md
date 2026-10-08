@@ -109,6 +109,7 @@ Uninstalling removes the plugin, backend and cache. It keeps your settings, pres
 
 ## Common problems
 
+- If Prism says **Backend offline**, the backend isn't running or the plugin is looking at the wrong port. Click the status, or open **Settings**, for the start command, the last connection error and a button to go back to the default port. Run `prism start` in a terminal to start the backend and wait for it, and `prism logs` to see its recent output. If `prism` is missing, run the installer again.
 - If Prism says **HTTP access blocked**, allow it to reach `127.0.0.1` under **Plugins → Manage Plugins**.
 - If an asset cannot be downloaded, Prism shows a warning and uses a box or plain color. Check the API key permissions, then select the model again.
 - Studio plugins cannot read union geometry, so Prism draws unions as boxes.

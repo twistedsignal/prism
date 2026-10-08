@@ -862,7 +862,7 @@ const function RenderPage(props: Props): Frame
 			end, function()
 				return label({
 					text = function()
-						return if props.connected() then "Loading settings…" else "Connect to the Prism backend to edit render settings."
+						return if props.connected() then "Loading settings…" else "The Prism backend is offline. Open Settings to reconnect and edit render settings."
 					end,
 					size = UDim2.new(1, -16, 0, 40),
 					position = UDim2.fromOffset(8, 0),
