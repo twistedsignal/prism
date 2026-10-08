@@ -7,8 +7,9 @@ const Overlay = require("../Overlay")
 const new = vide.create
 
 export type ModalButton = {
-	text: string,
+	text: string | () -> string,
 	variant: Button.Variant?,
+	enabled: (() -> boolean)?,
 	activated: (close: () -> ()) -> (),
 }
 
@@ -28,6 +29,7 @@ const function open(props: Props): () -> ()
 			table.insert(buttons, Button({
 				text = button.text,
 				variant = button.variant,
+				enabled = button.enabled,
 				size = UDim2.new(1 / #props.buttons, -6, 1, 0),
 				layoutOrder = index,
 				activated = function()
@@ -52,7 +54,8 @@ const function open(props: Props): () -> ()
 				Name = "Dialog",
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.fromOffset(props.width or 380, props.height),
+				Size = UDim2.new(1, -24, 0, props.height),
+				new("UISizeConstraint")({ MaxSize = Vector2.new(props.width or 380, props.height) }),
 				BackgroundColor3 = Theme.DARK,
 				BorderSizePixel = 0,
 				Active = true,

@@ -1002,7 +1002,35 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end)
 	end
 
-	const function deletePreset(name: string)
+	-- Sharing requests leave model settings and the active preset untouched.
+	const function presetRequest(action: string, body: { [string]: any }, onDone: (any?, string?) -> ())
+		task.spawn(function()
+			const response = bridge.request("POST", `/presets/{action}`, body)
+			if response.ok then
+				if action == "import" then
+					presets(response.body.presets)
+					setNotice(`Imported preset "{response.body.name}".`, "success")
+				end
+				onDone(response.body, nil)
+			else
+				onDone(nil, response.error or "Could not complete the preset request")
+			end
+		end)
+	end
+
+	const function exportPreset(name: string, onDone: (any?, string?) -> ())
+		presetRequest("export", { name = name }, onDone)
+	end
+
+	const function decodePreset(code: string, onDone: (any?, string?) -> ())
+		presetRequest("decode", { code = code }, onDone)
+	end
+
+	const function importPreset(code: string, name: string, onDone: (any?, string?) -> ())
+		presetRequest("import", { code = code, name = name }, onDone)
+	end
+
+	const function deletePreset(name: string, onDone: ((boolean, string?) -> ())?)
 		task.spawn(function()
 			const response = bridge.request("DELETE", `/presets/{HttpService:UrlEncode(name)}`)
 			if response.ok then
@@ -1013,6 +1041,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 				setNotice(`Deleted preset "{name}".`, "info")
 			else
 				setNotice(response.error or "Could not delete the preset", "error")
+			end
+			if onDone then
+				onDone(response.ok, response.error)
 			end
 		end)
 	end
@@ -1281,6 +1312,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 		applyPreset = applyPreset,
 		savePreset = savePreset,
 		deletePreset = deletePreset,
+		exportPreset = exportPreset,
+		decodePreset = decodePreset,
+		importPreset = importPreset,
 		updateConfig = updateConfig,
 		changePort = changePort,
 		pickFolder = pickFolder,

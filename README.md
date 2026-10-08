@@ -45,7 +45,7 @@ After an upload, or from History with **Use template**, pick a template to see t
 
 **Render and upload history**, at the bottom of Settings, lists the models you've rendered and uploaded, newest first. Uploads show their `rbxassetid://` image ID, which you can select and copy, plus the moderation state. Agent renders and uploads appear there too. The backend keeps the latest 500 entries in `history.json` next to its config. **Clear** asks for a second click before deleting them.
 
-The plugin has outlines, shadows, glow, color and depth effects, and text. Presets are saved locally. Prism also remembers a model's settings when you deselect and reselect it.
+The plugin has outlines, shadows, glow, color and depth effects, and text. Presets are saved locally. Use the preset row's **…** menu to import, export or delete presets. Export creates a self-contained share code you can copy and send to anyone using Prism. Import validates the code before asking for your own preset name, then saves it without changing your model settings. Codes preserve all settings, including text and inactive effects. Simple presets usually fit within 50 characters; complex presets can be longer. No online storage or lookup is used. Prism also remembers a model's settings when you deselect and reselect it.
 
 Slow renders show the current render step, completed/total steps, and elapsed time in the preview after three seconds. Agent jobs expose the same progress, and waiting CLI commands print updates to stderr every three seconds. These are completed render steps, not estimated Blender samples.
 

@@ -22,6 +22,7 @@ export type Props = {
 	anchorPoint: Vector2?,
 	layoutOrder: number?,
 	emptyText: string?,
+	compact: boolean?,
 	-- typeface for the button's text, such as the selected font.
 	font: (() -> Font?)?,
 }
@@ -36,12 +37,15 @@ const function openList(button: GuiObject, options: { Option }, onSelect: (any) 
 	const listHeight = math.min(count * Theme.DROPDOWN_ROW_HEIGHT, MAX_LIST_HEIGHT)
 	const height = listHeight + if searchable then SEARCH_HEIGHT + 4 else 0
 	const below = opened.Y + button.AbsoluteSize.Y + height <= layer.AbsoluteSize.Y - 4
-	const width = math.max(button.AbsoluteSize.X, 140)
+	const width = math.min(math.max(button.AbsoluteSize.X, 140), layer.AbsoluteSize.X - 8)
 	const query = vide.source("")
 
 	Overlay.mount(function(close)
 		-- follow the button while the page scrolls, instead of floating in place.
 		const anchor = Overlay.anchor(button, close)
+		const function left(): number
+			return math.clamp(anchor().X, 4, math.max(4, layer.AbsoluteSize.X - width - 4))
+		end
 		const function top(): number
 			const position = anchor()
 			return if below then position.Y + button.AbsoluteSize.Y + 2 else position.Y - height - 2
@@ -99,7 +103,7 @@ const function openList(button: GuiObject, options: { Option }, onSelect: (any) 
 					Name = "Search",
 					Size = UDim2.fromOffset(width, SEARCH_HEIGHT),
 					Position = function()
-						return UDim2.fromOffset(anchor().X, top())
+						return UDim2.fromOffset(left(), top())
 					end,
 					BackgroundColor3 = Theme.INPUT,
 					BorderSizePixel = 0,
@@ -127,7 +131,7 @@ const function openList(button: GuiObject, options: { Option }, onSelect: (any) 
 				Name = "List",
 				Size = UDim2.fromOffset(width, listHeight),
 				Position = function()
-					return UDim2.fromOffset(anchor().X, top() + if searchable then SEARCH_HEIGHT + 4 else 0)
+					return UDim2.fromOffset(left(), top() + if searchable then SEARCH_HEIGHT + 4 else 0)
 				end,
 				BackgroundColor3 = Theme.DARKER,
 				BorderSizePixel = 0,
@@ -165,11 +169,11 @@ const function Dropdown(props: Props): TextButton
 		new("UICorner")({ CornerRadius = UDim.new(0, 4) }),
 		new("TextLabel")({
 			Name = "Text",
-			Size = UDim2.new(1, -30, 1, 0),
-			Position = UDim2.fromOffset(8, 0),
+			Size = UDim2.new(1, if props.compact then 0 else -30, 1, 0),
+			Position = UDim2.fromOffset(if props.compact then 0 else 8, 0),
 			BackgroundTransparency = 1,
 			Text = props.text,
-			TextXAlignment = Enum.TextXAlignment.Left,
+			TextXAlignment = if props.compact then Enum.TextXAlignment.Center else Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			FontFace = function()
 				return if props.font then props.font() or DEFAULT_FONT else DEFAULT_FONT
@@ -179,6 +183,7 @@ const function Dropdown(props: Props): TextButton
 		}),
 		new("ImageLabel")({
 			Name = "Arrow",
+			Visible = not props.compact,
 			Size = UDim2.fromOffset(12, 12),
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, -8, 0.5, 0),

@@ -16,6 +16,7 @@ import agent
 import fonts
 import platform_open
 import schema
+import preset_codec
 import updater
 import uploader
 from jobs import JobQueue, Superseded
@@ -268,6 +269,35 @@ def make_handler(bridge):
         def get_presets(self):
             return 200, bridge.store.get_presets()
 
+        def export_preset(self):
+            name = self.read_json().get("name")
+            if not isinstance(name, str):
+                raise HttpError(400, "Preset name must be text")
+            presets = bridge.store.get_presets()
+            if name not in presets:
+                raise HttpError(404, "No preset with that name")
+            try:
+                return 200, {"code": preset_codec.encode(presets[name])}
+            except ValueError as error:
+                raise HttpError(400, str(error)) from error
+
+        def decode_preset(self):
+            try:
+                return 200, {"settings": preset_codec.decode(self.read_json().get("code"))}
+            except ValueError as error:
+                raise HttpError(400, str(error)) from error
+
+        def import_preset(self):
+            body = self.read_json()
+            try:
+                settings = preset_codec.decode(body.get("code"))
+                name = bridge.store.import_preset(body.get("name"), settings)
+            except FileExistsError as error:
+                raise HttpError(409, str(error)) from error
+            except ValueError as error:
+                raise HttpError(400, str(error)) from error
+            return 200, {"name": name, "presets": bridge.store.get_presets()}
+
         def put_preset(self, name):
             body = self.read_json()
             try:
@@ -415,6 +445,9 @@ def make_handler(bridge):
         ("GET", "/config"): Handler.get_config,
         ("PUT", "/config"): Handler.put_config,
         ("GET", "/presets"): Handler.get_presets,
+        ("POST", "/presets/export"): Handler.export_preset,
+        ("POST", "/presets/decode"): Handler.decode_preset,
+        ("POST", "/presets/import"): Handler.import_preset,
         ("PUT", "/presets/<name>"): Handler.put_preset,
         ("DELETE", "/presets/<name>"): Handler.delete_preset,
         ("GET", "/history"): Handler.get_history,

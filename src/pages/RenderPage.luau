@@ -17,6 +17,7 @@ const TextBoxSetting = require("../components/TextBoxSetting")
 const ModelCard = require("../components/ModelCard")
 const Preview = require("../components/Preview")
 const Modal = require("../components/Modal")
+const PresetDialogs = require("../components/PresetDialogs")
 const TemplateOutput = require("../components/TemplateOutput")
 const Store = require("../Store")
 const Requirements = require("../Requirements")
@@ -786,12 +787,12 @@ const function RenderPage(props: Props): Frame
 				end,
 				onSelect = store.applyPreset,
 				emptyText = "No presets yet. Click Save as.",
-				size = UDim2.new(1, -140, 1, 0),
+				size = UDim2.new(1, -110, 1, 0),
 			}),
 			Button({
 				text = "Save as",
 				size = UDim2.fromOffset(68, 28),
-				position = UDim2.new(1, -70, 0, 0),
+				position = UDim2.new(1, -36, 0, 0),
 				anchorPoint = Vector2.new(1, 0),
 				enabled = function()
 					return props.connected() and store.currentModel() ~= nil
@@ -800,19 +801,26 @@ const function RenderPage(props: Props): Frame
 					promptPresetName(store.savePreset)
 				end,
 			}),
-			Button({
-				text = "Delete",
-				variant = "danger",
-				size = UDim2.fromOffset(64, 28),
-				position = UDim2.fromScale(1, 0),
-				anchorPoint = Vector2.new(1, 0),
-				enabled = function()
-					return store.activePreset() ~= nil
+			Dropdown({
+				text = function() return "…" end,
+				compact = true,
+				size = UDim2.fromOffset(30, 28),
+				position = UDim2.fromScale(1, 0), anchorPoint = Vector2.new(1, 0),
+				options = function()
+					if not props.connected() then return {} end
+					const options = { { label = "Import preset", value = "import" } }
+					if next(store.presets()) ~= nil then
+						table.insert(options, { label = "Export preset", value = "export" })
+						table.insert(options, { label = "Delete preset", value = "delete" })
+					end
+					return options
 				end,
-				activated = function()
-					const active = store.activePreset()
-					if active then
-						store.deletePreset(active)
+				emptyText = "Connect to manage presets.",
+				onSelect = function(action)
+					if action == "import" then
+						PresetDialogs.import(store)
+					else
+						PresetDialogs.saved(store, action)
 					end
 				end,
 			}),

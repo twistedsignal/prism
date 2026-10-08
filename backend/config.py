@@ -182,6 +182,22 @@ class Store:
             write_json(self.presets_path, presets)
         return name
 
+    def import_preset(self, name, settings):
+        if not isinstance(name, str):
+            raise ValueError("Preset name must be text")
+        name = name.strip()
+        if not name or len(name) > 64 or schema.CONTROL_CHARACTERS.search(name):
+            raise ValueError("Preset name must contain 1 to 64 characters without control characters")
+        with self.lock:
+            presets = read_json(self.presets_path, {})
+            if not isinstance(presets, dict):
+                presets = {}
+            if name in presets:
+                raise FileExistsError("A preset with that name already exists")
+            presets[name] = schema.normalize(settings)
+            write_json(self.presets_path, presets)
+        return name
+
     def delete_preset(self, name):
         with self.lock:
             presets = read_json(self.presets_path, {})
