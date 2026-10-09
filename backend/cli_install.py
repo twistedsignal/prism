@@ -17,6 +17,17 @@ def launcher_path():
     return Path.home() / ".local" / "bin" / "prism"
 
 
+def batch_line(parts):
+    """cmd.exe reads batch files in the OEM code page and expands %, so escape % and
+    refer to profile folders through their variables to keep user names out of the file."""
+    line = subprocess.list2cmdline(parts).replace("%", "%%")
+    for name in ("LOCALAPPDATA", "APPDATA", "USERPROFILE"):
+        folder = os.environ.get(name)
+        if folder:
+            line = line.replace(folder.replace("%", "%%"), f"%{name}%")
+    return line
+
+
 def install():
     script = Path(__file__).with_name("cli.py").resolve()
     value = runtime.settings()
@@ -28,12 +39,17 @@ def install():
         print(f"[prism] CLI launcher conflict at {path}; existing command left in place")
         return discovery()
     if sys.platform == "win32":
-        content = f'@echo off\nrem {MARKER}\n' + subprocess.list2cmdline(command + [str(script)]) + ' %*\n'
+        content = f'@echo off\nrem {MARKER}\n' + batch_line(command + [str(script)]) + ' %*\n'
+        try:
+            data = content.encode("oem")
+        except (LookupError, UnicodeEncodeError):  # no OEM codec off Windows, or a name it can't hold
+            data = content.encode("utf-8")
     else:
         content = f'#!/bin/sh\n# {MARKER}\nexec ' + shlex.join(command + [str(script)]) + ' "$@"\n'
+        data = content.encode("utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists() or path.read_text(encoding="utf-8", errors="replace") != content:
-        path.write_text(content, encoding="utf-8")
+    if not path.exists() or path.read_bytes() != data:
+        path.write_bytes(data)
     if sys.platform != "win32":
         path.chmod(0o755)
     return discovery()

@@ -144,7 +144,7 @@ def install_windows(blender, start=True):
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>255</Count></RestartOnFailure>
     <Hidden>true</Hidden>
   </Settings>
   <Actions Context="Author"><Exec><Command>{escape(command[0])}</Command><Arguments>{escape(arguments)}</Arguments></Exec></Actions>

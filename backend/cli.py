@@ -32,6 +32,9 @@ If the backend is unavailable, run prism start; prism logs shows its recent outp
 
 
 class Client:
+    # The backend is local, so never route it through an HTTP_PROXY.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
     def __init__(self, port=None):
         self.port = port or config.Store().get_config()["port"]
 
@@ -40,7 +43,7 @@ class Client:
             data=json.dumps(body).encode() if body is not None else None,
             headers={"X-Prism": "1", "Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with self.opener.open(request, timeout=30) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:
             try:
@@ -221,6 +224,10 @@ def execute(args):
 
 
 def main(argv=None):
+    # Piped output on Windows defaults to the ANSI code page, which can't encode emoji or most names.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     args = parser().parse_args(argv)
     try:
         result, code = execute(args)

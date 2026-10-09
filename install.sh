@@ -322,7 +322,8 @@ else:
 	local save_code='
 import json, os, sys
 from datetime import datetime, timezone
-path, name, owner = sys.argv[1:4] if len(sys.argv) >= 4 else (os.environ["PRISM_CREDENTIALS"], os.environ["PRISM_KEY_NAME"], os.environ["PRISM_OWNER"])
+# Under Blender, sys.argv holds the Blender arguments, so read the environment.
+path, name, owner = (os.environ["PRISM_CREDENTIALS"], os.environ["PRISM_KEY_NAME"], os.environ["PRISM_OWNER"]) if "bpy" in sys.modules else sys.argv[1:4]
 key = sys.stdin.read().strip()
 try:
     with open(path, encoding="utf-8") as handle:
@@ -484,7 +485,7 @@ print(("PRISM:" if "bpy" in sys.modules else "") + (str(port) if isinstance(port
 
 	local started=false
 	for _ in $(seq 1 30); do
-		if curl -fsS -H "X-Prism: 1" "http://127.0.0.1:$port/status" >/dev/null 2>&1; then
+		if curl -fsS --noproxy "*" -H "X-Prism: 1" "http://127.0.0.1:$port/status" >/dev/null 2>&1; then
 			started=true
 			break
 		fi

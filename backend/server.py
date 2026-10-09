@@ -29,6 +29,8 @@ MAX_BODY = 512 * 1024 * 1024
 RENDER_TIMEOUT = 600
 UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 ALLOWED_HOSTS = ("127.0.0.1", "localhost", "::1")
+# Windows refuses these names with any extension, in any case.
+RESERVED_FILENAMES = re.compile(r"^(CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])(\..*)?$", re.IGNORECASE)
 
 
 class HttpError(Exception):
@@ -40,7 +42,8 @@ class HttpError(Exception):
 
 def safe_filename(name):
     name = UNSAFE_FILENAME.sub("_", str(name)).strip(" .")
-    return name[:100] or "icon"
+    name = name[:100].rstrip(" .") or "icon"
+    return f"_{name}" if RESERVED_FILENAMES.match(name) else name
 
 
 class Bridge:
@@ -466,11 +469,16 @@ def make_handler(bridge):
     return Handler
 
 
+class Server(ThreadingHTTPServer):
+    # SO_REUSEADDR on Windows lets a second backend bind a port that is already in use.
+    allow_reuse_address = sys.platform != "win32"
+
+
 def bind(bridge, port, attempts=30):
     """Retry briefly: after an update the previous backend may still be releasing the port."""
     for attempt in range(attempts):
         try:
-            return ThreadingHTTPServer(("127.0.0.1", port), make_handler(bridge))
+            return Server(("127.0.0.1", port), make_handler(bridge))
         except OSError:
             if attempt == attempts - 1:
                 raise

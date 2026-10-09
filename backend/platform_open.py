@@ -46,6 +46,8 @@ def pick_folder(initial):
     initial = str(Path(initial).expanduser())
     if sys.platform == "win32":
         script = (
+            # Print UTF-8 so folders with non-ASCII names survive the pipe.
+            "[Console]::OutputEncoding = [Text.Encoding]::UTF8;"
             "Add-Type -AssemblyName System.Windows.Forms;"
             "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
             "$d.Description = 'Choose where Prism saves icons';"
@@ -63,7 +65,8 @@ def pick_folder(initial):
     else:
         return None
     try:
-        result = subprocess.run(command, capture_output=True, text=True, errors="replace", timeout=600, env=session_environment())
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+                                env=session_environment())
     except (OSError, subprocess.TimeoutExpired):
         return None
     chosen = result.stdout.strip()

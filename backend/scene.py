@@ -590,7 +590,7 @@ class SceneCache:
         if (directory / "model.obj").exists():
             (directory / "model.obj").touch()
             manifest = directory / "warnings.json"
-            return identifier, json.loads(manifest.read_text()) if manifest.exists() else []
+            return identifier, json.loads(manifest.read_text(encoding="utf-8")) if manifest.exists() else []
         staging = self.root / f".{identifier}.tmp"
         shutil.rmtree(staging, ignore_errors=True)
         try:

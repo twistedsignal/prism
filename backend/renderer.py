@@ -71,7 +71,7 @@ def get_args():
 
     settings = {}
     if args.settings is not None:
-        settings = json.loads(args.settings.read_text())
+        settings = json.loads(args.settings.read_text(encoding="utf-8"))
     if args.orthogonal is not None:
         settings["orthographic"] = args.orthogonal
     if args.zoom is not None:

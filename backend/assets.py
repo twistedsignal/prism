@@ -29,6 +29,7 @@ MESH_DECODER_VERSION = 2
 # Keep in sync with install.sh and install.ps1 (tests/test_installers.py checks this).
 RAVEN_VERSION = "0.3.0"
 RAVEN_ARCHIVE = f"https://github.com/twistedsignal/raven/archive/refs/tags/v{RAVEN_VERSION}.tar.gz"
+CMD_METACHARACTERS = re.compile(r'([()\][%!^"`<>&|;, *?])')
 IMAGE_PROPERTIES = (
     "Texture",
     "TextureContent",
@@ -62,23 +63,35 @@ def raven_environment(path):
     return env
 
 
+def cmd_quote(value, shim=False):
+    """Quote one argument for cmd.exe /s /c. Model names and profile paths can hold
+    spaces, quotes, & or %, so caret-escape every metacharacter; npm shims re-parse %*,
+    so their arguments are escaped twice."""
+    value = re.sub(r'(\\*)"', r'\1\1\\"', str(value))
+    value = re.sub(r"(\\*)$", r"\1\1", value)
+    value = CMD_METACHARACTERS.sub(r"^\1", f'"{value}"')
+    return CMD_METACHARACTERS.sub(r"^\1", value) if shim else value
+
+
+def cmd_shim_command(path, arguments):
+    line = " ".join([CMD_METACHARACTERS.sub(r"^\1", str(path))] + [cmd_quote(value, shim=True) for value in arguments])
+    # A string is passed to CreateProcess as is; a list would be re-quoted for C programs.
+    return f'"{os.environ.get("COMSPEC", "cmd.exe")}" /d /s /c "{line}"'
+
+
 def run_raven(path, arguments, timeout=180):
     # npm's Windows .cmd shim needs cmd.exe; keys remain in Raven's credentials/environment.
     command = [path, *arguments]
     if os.name == "nt" and str(path).lower().endswith((".cmd", ".bat")):
-        command = [
-            os.environ.get("COMSPEC", "cmd.exe"),
-            "/d",
-            "/s",
-            "/c",
-            subprocess.list2cmdline(command),
-        ]
+        command = cmd_shim_command(path, arguments)
     try:
         return subprocess.run(
             command,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            # Node writes UTF-8 to pipes, not the Windows ANSI code page.
+            encoding="utf-8",
             errors="replace",
             timeout=timeout,
             env=raven_environment(path),
