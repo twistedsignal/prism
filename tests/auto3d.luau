@@ -33,7 +33,7 @@ local modules = {
 	["./ScriptInsert"] = {},
 	["./Template"] = { defaults = function() return {} end },
 	["./Base64"] = { decode = function() return buffer.create(4) end },
-	["./Version"] = "test",
+	["./Version"] = "test", ['./PluginHash'] = 'test',
 	["./Serializer"] = {
 		serialize = function(instance)
 			table.insert(serialized, instance)

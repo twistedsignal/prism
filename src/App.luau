@@ -172,9 +172,10 @@ const function App(props: Props): Frame
 	end)
 
 	const dismissedVersion = source(nil :: string?)
-	const bannerMode = function(): "restart" | "update" | nil
-		if store.updateState() == "restart" then
-			return "restart"
+	const bannerMode = function(): "restart" | "reloading" | "update" | nil
+		const state = store.updateState()
+		if state == "restart" or state == "reloading" then
+			return state
 		end
 		const info = store.update()
 		if info and info.available and info.latest ~= dismissedVersion() then
@@ -204,6 +205,8 @@ const function App(props: Props): Frame
 			Text = function()
 				if bannerMode() == "restart" then
 					return `Prism v{store.installedVersion() or "?"} is installed. Restart Roblox Studio to finish updating.`
+				elseif bannerMode() == "reloading" then
+					return `Restarting the Prism backend on v{store.installedVersion() or "?"}…`
 				end
 				const info = store.update()
 				return `Prism v{if info then info.latest else "?"} is available.`

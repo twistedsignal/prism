@@ -534,7 +534,8 @@ const function SettingsPage(props: Props): ScrollingFrame
 						elseif problem then
 							store.setNotice(`Couldn't check for updates: {problem}`, "error")
 						else
-							store.setNotice(`Prism is up to date (v{props.pluginVersion}).`, "success")
+							-- after backend-only updates the backend holds the newest version number.
+							store.setNotice(`Prism is up to date (v{info and info.current or props.pluginVersion}).`, "success")
 						end
 					end)
 				end,

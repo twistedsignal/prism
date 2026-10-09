@@ -15,11 +15,14 @@ const Template = require("./Template")
 const source = vide.source
 
 const VERSION = require("./Version")
+const PLUGIN_HASH = require("./PluginHash")
 
 const AUTO_3D_KEY = "PrismAuto3d"
 const LAST_SETTINGS_KEY = "PrismLastSettings"
 const TEMPLATES_KEY = "PrismTemplates"
 const UPDATE_CHECK_INTERVAL = 30 * 60
+-- how long a backend-only update may take to restart before giving up.
+const BACKEND_RESTART_TIMEOUT = 90
 const THUMBNAIL_SIZE = 128
 const THUMBNAIL_DELAY = 0.6
 const SAVE_DELAY = 1
@@ -41,8 +44,10 @@ export type UpdateInfo = {
 	notes: string,
 	url: string,
 	error: string?,
+	-- false when the latest release leaves the plugin unchanged, so Studio needn't restart.
+	pluginChanged: boolean?,
 }
-export type UpdateState = "idle" | "updating" | "restart"
+export type UpdateState = "idle" | "updating" | "reloading" | "restart"
 export type UploadResult = {
 	name: string,
 	assetId: string?,
@@ -1204,7 +1209,9 @@ const function create(plugin: Plugin, bridge: Bridge)
 
 	const function checkForUpdate(force: boolean?, onResult: ((UpdateInfo?, string?) -> ())?)
 		task.spawn(function()
-			const query = `/update?plugin={HttpService:UrlEncode(VERSION)}{if force then "&force=1" else ""}`
+			const query = `/update?plugin={HttpService:UrlEncode(VERSION)}&pluginHash={HttpService:UrlEncode(PLUGIN_HASH)}{if force
+				then "&force=1"
+				else ""}`
 			const response = bridge.request("GET", query)
 			if response.ok and type(response.body) == "table" then
 				update(response.body)
@@ -1217,20 +1224,55 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end)
 	end
 
-	const function installUpdate(onDone: (ok: boolean, message: string, plugins: { string }) -> ())
+	-- after a backend-only update: wait for the new backend, then reload its data and redraw every render.
+	const function reloadBackend(version: string)
+		const deadline = os.clock() + BACKEND_RESTART_TIMEOUT
+		while not destroyed do
+			const response = bridge.request("GET", "/status")
+			if response.ok and type(response.body) == "table" and response.body.version == version then
+				break
+			end
+			if os.clock() >= deadline then
+				updateState("idle")
+				setNotice(`The Prism backend didn't come back after updating to v{version}. Run prism logs to see why.`, "error")
+				return
+			end
+			task.wait(0.5)
+		end
+		if destroyed then
+			return
+		end
+		bridge.refresh()
+		-- the new backend may build scenes differently, so send every model again.
+		for _, model in models() do
+			model.sceneId(nil)
+		end
+		updateState("idle")
+		loadRemote()
+		checkForUpdate()
+		setNotice(`Prism v{version} is running. Renders were refreshed; no Studio restart needed.`, "success")
+	end
+
+	const function installUpdate(onDone: (ok: boolean, message: string, plugins: { string }, pluginChanged: boolean) -> ())
 		if updateState() ~= "idle" then
 			return
 		end
 		updateState("updating")
 		task.spawn(function()
-			const response = bridge.request("POST", "/update")
+			const response = bridge.request("POST", "/update", { pluginHash = PLUGIN_HASH })
 			if response.ok and type(response.body) == "table" then
-				installedVersion(response.body.version)
-				updateState("restart")
-				onDone(true, response.body.version, response.body.plugins or {})
+				const version = response.body.version
+				installedVersion(version)
+				-- older backends don't report this; assume the plugin changed.
+				const pluginChanged = response.body.pluginChanged ~= false
+				updateState(if pluginChanged then "restart" else "reloading")
+				onDone(true, version, response.body.plugins or {}, pluginChanged)
+				if not pluginChanged then
+					reloadBackend(version)
+				end
 			else
 				updateState("idle")
-				onDone(false, response.error or "The update failed.", {})
+				onDone(false, response.error or "The update failed.", {}, true)
 			end
 		end)
 	end
@@ -1247,8 +1289,13 @@ const function create(plugin: Plugin, bridge: Bridge)
 	-- reload backend data whenever the bridge (re)connects.
 	vide.effect(function()
 		if bridge.connected() then
+			const state = vide.untrack(updateState)
+			-- a backend-only update reloads everything itself once the new backend is up.
+			if state == "reloading" then
+				return
+			end
 			task.spawn(loadRemote)
-			if vide.untrack(updateState) ~= "restart" then
+			if state ~= "restart" then
 				checkForUpdate()
 			end
 		end

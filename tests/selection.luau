@@ -26,7 +26,7 @@ local modules = {
 	["./ScriptInsert"] = {},
 	["./Template"] = { defaults = function() return {} end },
 	["./Base64"] = {},
-	["./Version"] = "test",
+	["./Version"] = "test", ['./PluginHash'] = 'test',
 	["./Serializer"] = {
 		serialize = function(instance)
 			table.insert(serialized, instance)

@@ -379,11 +379,13 @@ def make_handler(bridge):
         def update_status(self):
             query = parse_qs(urlsplit(self.path).query)
             plugin_version = (query.get("plugin") or [None])[0]
+            plugin_hash = (query.get("pluginHash") or [None])[0]
             bridge.agent.legacy_version = plugin_version
             force = (query.get("force") or ["0"])[0] == "1"
-            return 200, bridge.updates.status(plugin_version, force)
+            return 200, bridge.updates.status(plugin_version, force, plugin_hash)
 
         def update(self):
+            plugin_hash = self.read_json().get("pluginHash")
             if not bridge.updating.acquire(blocking=False):
                 raise HttpError(409, "An update is already running")
             try:
@@ -400,10 +402,12 @@ def make_handler(bridge):
             except BaseException:
                 bridge.updating.release()
                 raise
-            print(f"[prism] Updated to {version}; restarting")
+            # The new backend is in place, so this reads the fingerprint it was released with.
+            changed = updater.plugin_changed(plugin_hash if isinstance(plugin_hash, str) else None, config.plugin_hash())
+            print(f"[prism] Updated to {version}; restarting" + ("" if changed else " (plugin unchanged)"))
             # Restart after this response reaches the plugin.
             threading.Timer(1.0, updater.restart).start()
-            return 200, {"version": version, "plugins": plugins, "restarting": True}
+            return 200, {"version": version, "plugins": plugins, "restarting": True, "pluginChanged": changed}
 
         def restart(self):
             """Restart so a changed port in the config takes effect."""

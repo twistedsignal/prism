@@ -89,7 +89,7 @@ local fails = false
 local modules = {
     ['./vide'] = { source = source, effect = function() end },
     ['./Data'] = { load = function(_, _, fallback) return fallback end, save = function(_, _, value) saved = value end },
-    ['./Types'] = {}, ['./Base64'] = {}, ['./Version'] = 'test',
+    ['./Types'] = {}, ['./Base64'] = {}, ['./Version'] = 'test', ['./PluginHash'] = 'test',
     ['./MaterialStyle'] = { load = function() return 'auto' end, save = function() end },
     ['./PathGlob'] = { pathOf = function() return '' end, match = function() return {}, false end },
     ['./ScriptInsert'] = {},

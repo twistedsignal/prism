@@ -49,6 +49,16 @@ def version():
         return "dev"
 
 
+def plugin_hash(backend=None):
+    """Fingerprint of the plugin code released with this backend, or None in a source checkout."""
+    path = Path(backend or Path(__file__).resolve().parent) / "PLUGIN_HASH"
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return value if re.fullmatch(r"[0-9a-f]{64}", value) else None
+
+
 CONFIG_DEFAULTS = {
     "outputFolder": default_output_folder(),
     "previewSize": 256,

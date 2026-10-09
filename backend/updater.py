@@ -24,6 +24,7 @@ DOWNLOAD_URL = f"https://github.com/{REPO}/releases/download/v{{version}}/{{asse
 CHECK_INTERVAL = 60 * 60
 RESTART_EXIT_CODE = 75
 PLUGIN_FILE = "Prism.rbxm"
+PLUGIN_HASH_FILE = "plugin-hash.txt"
 
 
 class UpdateError(RuntimeError):
@@ -105,6 +106,7 @@ class Checker:
                         "version": str(release.get("tag_name", "")).lstrip("v"),
                         "notes": str(release.get("body") or "")[:2000],
                         "url": release.get("html_url") or f"https://github.com/{REPO}/releases",
+                        "pluginHash": release_plugin_hash(release),
                     }
                     self.error = None
                 except (UpdateError, ValueError) as error:
@@ -112,12 +114,15 @@ class Checker:
                 self.checked_at = time.time()
             return self.release, self.error
 
-    def status(self, plugin_version=None, force=False):
+    def status(self, plugin_version=None, force=False, plugin_hash=None):
         current = config.version()
         release, error = self.latest(force)
         latest = release["version"] if release else None
         latest_tuple = parse_version(latest)
-        installed = [parse_version(current), parse_version(plugin_version)]
+        installed = [parse_version(current)]
+        # A plugin left in place by a backend-only update keeps its older version number.
+        if not plugin_hash or plugin_hash != config.plugin_hash():
+            installed.append(parse_version(plugin_version))
         outdated = latest_tuple is not None and any(
             version is not None and version < latest_tuple for version in installed
         )
@@ -128,9 +133,28 @@ class Checker:
             "available": outdated and not is_source_checkout(),
             "canUpdate": not is_source_checkout(),
             "notes": release["notes"] if release else "",
+            # Whether installing the latest release replaces the plugin and needs a Studio restart.
+            "pluginChanged": plugin_changed(plugin_hash, release.get("pluginHash") if release else None),
             "url": release["url"] if release else f"https://github.com/{REPO}/releases",
             "error": error,
         }
+
+
+def release_plugin_hash(release):
+    """The plugin fingerprint published with a release; None for releases before v0.21.0."""
+    for asset in release.get("assets") or []:
+        if isinstance(asset, dict) and asset.get("name") == PLUGIN_HASH_FILE and asset.get("browser_download_url"):
+            try:
+                value = fetch(asset["browser_download_url"], timeout=20).decode("ascii").strip()
+            except (UpdateError, UnicodeDecodeError):
+                return None
+            return value if re.fullmatch(r"[0-9a-f]{64}", value) else None
+    return None
+
+
+def plugin_changed(running, released):
+    """Unknown fingerprints count as changed, so Studio restarts unless both match."""
+    return not (running and released and running == released)
 
 
 # ============================================================

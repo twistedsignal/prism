@@ -1,5 +1,5 @@
 -- selene: allow(mixed_table)
--- asks to install a new release, then tells the user to restart studio.
+-- asks to install a new release, then tells the user to restart studio when the plugin changed.
 const vide = require("./vide")
 const Theme = require("./components/Theme")
 const Modal = require("./components/Modal")
@@ -80,9 +80,11 @@ const function open(store: Store.Store)
 				variant = "accent",
 				activated = function(close)
 					close()
-					store.installUpdate(function(ok, message, plugins)
-						if ok then
+					store.installUpdate(function(ok, message, plugins, pluginChanged)
+						if ok and pluginChanged then
 							showRestart(message, plugins, info.url)
+						elseif ok then
+							store.setNotice(`Restarting the Prism backend on v{message}…`, "info")
 						else
 							store.setNotice(`Update failed: {message}`, "error")
 						end
@@ -91,9 +93,10 @@ const function open(store: Store.Store)
 			},
 		},
 		body = function()
-			return bodyText(
-				`You have v{VERSION}. Updating downloads the new release, reinstalls the backend and plugin, then restarts the backend. You'll need to restart Roblox Studio afterwards.{notes}`
-			)
+			const steps = if info.pluginChanged == false
+				then "This release only changes the backend: Prism restarts it and redraws your renders, with no Studio restart."
+				else "Updating downloads the new release, reinstalls the backend and plugin, then restarts the backend. You'll need to restart Roblox Studio afterwards."
+			return bodyText(`You have v{info.current or VERSION}. {steps}{notes}`)
 		end,
 	})
 end

@@ -20,7 +20,7 @@ local modules = {
             saved[key] = value
         end,
     },
-    ['./Types'] = {}, ['./Base64'] = {}, ['./Version'] = 'test',
+    ['./Types'] = {}, ['./Base64'] = {}, ['./Version'] = 'test', ['./PluginHash'] = 'test',
     ['./MaterialStyle'] = {load = function() return 'auto' end, save = function() end},
     ['./PathGlob'] = {}, ['./ScriptInsert'] = {}, ['./Serializer'] = {}, ['./LightingSync'] = {},
     ['./Template'] = {defaults = function() return {} end},

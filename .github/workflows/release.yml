@@ -81,6 +81,8 @@ jobs:
           echo "${{ steps.package.outputs.version }}" > backend/VERSION
           tar -czf build/prism-backend.tar.gz backend
           zip -qr build/prism-backend.zip backend
+          # Lets older backends tell whether this release changes the plugin.
+          cp backend/PLUGIN_HASH build/plugin-hash.txt
 
       - name: Create version tag
         if: steps.existing.outputs.tagged != 'true'
@@ -109,5 +111,6 @@ jobs:
             build/Prism.rbxm \
             build/prism-backend.tar.gz \
             build/prism-backend.zip \
+            build/plugin-hash.txt \
             --title "${{ steps.package.outputs.tag }}" \
             --notes-file build/release-notes.md

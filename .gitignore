@@ -6,6 +6,7 @@ test/**
 /*.rbxm
 /sourcemap.json
 /src/Version.luau
+/src/PluginHash.luau
 
 __pycache__/
 *.pyc
@@ -14,3 +15,4 @@ Packages
 build
 vendor
 backend/VERSION
+backend/PLUGIN_HASH

@@ -95,7 +95,7 @@ Upgrades preserve settings and presets. The new backend installs or refreshes th
 
 ## Updates and removal
 
-Prism prompts you when a new release is available. After an update, restart Roblox Studio to load the new plugin. You can also use **Settings → Check for updates** or run the installer again.
+Prism prompts you when a new release is available. If the release changes the plugin, restart Roblox Studio after updating to load it. If it only changes the backend, Prism restarts the backend and redraws your renders without a Studio restart. You can also use **Settings → Check for updates** or run the installer again.
 
 To uninstall on macOS or Linux:
 
@@ -208,7 +208,7 @@ To test the installer against a local checkout, build the plugin first, then run
 PRISM_SOURCE="$PWD" bash install.sh
 ```
 
-Releases are published by `.github/workflows/release.yml` when the version in `wally.toml` changes. The release commit's message becomes the release notes shown in the plugin's update prompt.
+Releases are published by `.github/workflows/release.yml` when the version in `wally.toml` changes. The release commit's message becomes the release notes shown in the plugin's update prompt. `scripts/write-version.bash` fingerprints the plugin's source (excluding its version number) into `src/PluginHash.luau` and `backend/PLUGIN_HASH`, and each release publishes it as `plugin-hash.txt`. When the running plugin's fingerprint matches the new release's, the update is treated as backend-only.
 
 ## License
 
