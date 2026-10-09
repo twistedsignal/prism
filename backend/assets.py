@@ -25,7 +25,7 @@ import uploader
 MAX_BYTES = 128 * 1024 * 1024
 # Decoded meshes and textures also live on disk; memory only speeds up re-selection.
 DECODED_CACHE_BYTES = 16 * 1024 * 1024
-MESH_DECODER_VERSION = 2
+MESH_DECODER_VERSION = 3
 # Keep in sync with install.sh and install.ps1 (tests/test_installers.py checks this).
 RAVEN_VERSION = "0.3.0"
 RAVEN_ARCHIVE = f"https://github.com/twistedsignal/raven/archive/refs/tags/v{RAVEN_VERSION}.tar.gz"

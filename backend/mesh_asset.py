@@ -51,6 +51,15 @@ def expand(vertices, normals, uvs, indices):
     }
 
 
+def lod0_range(lods, face_count):
+    """The faces of the highest detail level; later levels are coarser copies of the same model."""
+    if len(lods) < 2:
+        return 0, face_count
+    if any(a > b for a, b in pairwise(lods)) or lods[-1] > face_count:
+        raise MeshError("Invalid mesh LOD ranges")
+    return tuple(lods[:2]) if lods[1] > lods[0] else (0, face_count)
+
+
 def binary_mesh(data, offset, version):
     require_bytes(data, offset, 12)
     if version == "2.00":
@@ -92,18 +101,12 @@ def binary_mesh(data, offset, version):
         uvs.append(values[6:8])
     offset += vertex_count * stride + (vertex_count * 8 if bones else 0)
     require_bytes(data, offset, face_count * 12 + lod_count * 4)
-    start, end = 0, face_count
-    if lod_count >= 2:
-        lods = struct.unpack_from(f"<{lod_count}I", data, offset + face_count * 12)
-        if any(a > b for a, b in pairwise(lods)) or lods[-1] > face_count:
-            raise MeshError("Invalid mesh LOD ranges")
-        if lods[1] > lods[0]:
-            start, end = lods[:2]
+    start, end = lod0_range(struct.unpack_from(f"<{lod_count}I", data, offset + face_count * 12), face_count)
     indices = struct.unpack_from(f"<{(end - start) * 3}I", data, offset + start * 12)
     return expand(vertices, normals, uvs, indices)
 
 
-def draco_mesh(stream):
+def draco_mesh(stream, lods=()):
     # Use Blender's own platform-aware library discovery, including portable builds.
     try:
         import io_scene_gltf2  # noqa: F401
@@ -184,9 +187,9 @@ def draco_mesh(stream):
             raise MeshError("Invalid Draco index length")
         target = ct.create_string_buffer(index_count * 4)
         dll.decoderCopyIndices(decoder, target)
-        return expand(
-            vertices, normals, uvs, struct.unpack(f"<{index_count}I", target.raw)
-        )
+        start, end = lod0_range(lods, index_count // 3)
+        indices = struct.unpack(f"<{index_count}I", target.raw)[start * 3 : end * 3]
+        return expand(vertices, normals, uvs, indices)
     finally:
         dll.decoderRelease(decoder)
 
@@ -227,21 +230,27 @@ def decode(data):
         return binary_mesh(data, offset, version)
     if version != "7.00":
         raise MeshError(f"Unsupported Roblox mesh format {version}")
-    result = None
+    core, lods = None, ()
     while offset < len(data):
         require_bytes(data, offset, 16)
         kind, revision, size = struct.unpack_from("<8sII", data, offset)
         offset += 16
         require_bytes(data, offset, size)
         if kind == b"COREMESH":
-            if revision != 2 or result is not None:
+            if revision != 2 or core is not None:
                 raise MeshError("Unsupported v7 core mesh")
             require_bytes(data, offset, 4)
             (length,) = struct.unpack_from("<I", data, offset)
             if length != size - 4:
                 raise MeshError("Invalid Draco stream length")
-            result = draco_mesh(data[offset + 4 : offset + size])
+            core = data[offset + 4 : offset + size]
+        elif kind == b"LODS\0\0\0\0" and revision == 1 and size >= 7:
+            # Lower detail levels follow the full mesh in the same buffer; drawing them overlaps it.
+            _, _, count = struct.unpack_from("<HBI", data, offset)
+            if 7 + count * 4 > size:
+                raise MeshError("Invalid v7 LOD chunk")
+            lods = struct.unpack_from(f"<{count}I", data, offset + 7)
         offset += size
-    if result is None:
+    if core is None:
         raise MeshError("v7 mesh has no core geometry")
-    return result
+    return draco_mesh(core, lods)

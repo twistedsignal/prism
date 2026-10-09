@@ -123,6 +123,23 @@ class MeshTests(unittest.TestCase):
             mesh_asset.decode(binary)["positions"], mesh_asset.decode(data)["positions"]
         )
 
+    def test_v7_keeps_only_the_highest_detail_level(self):
+        core = b"draco"
+        # LODS revision 1: type, high quality count, then face offsets per level.
+        lods = struct.pack("<HBI5I", 4, 1, 5, 0, 388, 507, 569, 581)
+        binary = (
+            b"version 7.00\n"
+            + struct.pack("<8sII", b"COREMESH", 2, len(core) + 4) + struct.pack("<I", len(core)) + core
+            + struct.pack("<8sII", b"LODS\0\0\0\0", 1, len(lods)) + lods
+        )
+        with patch.object(mesh_asset, "draco_mesh", return_value={}) as draco:
+            mesh_asset.decode(binary)
+        draco.assert_called_once_with(core, (0, 388, 507, 569, 581))
+        self.assertEqual(mesh_asset.lod0_range((0, 388, 507, 569, 581), 581), (0, 388))
+        self.assertEqual(mesh_asset.lod0_range((), 581), (0, 581))
+        with self.assertRaises(mesh_asset.MeshError):
+            mesh_asset.lod0_range((0, 600), 581)
+
     def test_legacy_draco_library_lookup(self):
         modules = {}
         for name in ("io_scene_gltf2", "io_scene_gltf2.io", "io_scene_gltf2.io.com"):
