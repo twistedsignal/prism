@@ -613,6 +613,21 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 		entry.material = materialOf(context, part)
 	end
 	entry.layers = appearanceLayers(context, part)
+	if entry.kind ~= "mesh" and (part:IsA("Part") or part:IsA("WedgePart") or part:IsA("CornerWedgePart")) then
+		const surfaces = {}
+		const plastic = part.Material == Enum.Material.Plastic and findVariant(context, part) == nil and entry.texture == nil
+		for _, face in { "Right", "Left", "Top", "Bottom", "Back", "Front" } do
+			const surface = (part :: any)[`{face}Surface`]
+			const name = if surface then surface.Name else "Smooth"
+			const pin = name == "Hinge" or name == "Motor" or name == "SteppingMotor"
+			if (plastic or pin) and name ~= "Smooth" and name ~= "SmoothNoOutlines" then
+				surfaces[face] = name
+			end
+		end
+		if next(surfaces) then
+			entry.surfaces = surfaces
+		end
+	end
 	if entry.warning then
 		warnOnce(context, entry.warning)
 	end

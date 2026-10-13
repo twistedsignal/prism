@@ -119,3 +119,33 @@ serializer.setMaterialStyle('auto')
 assert(serializer.serialize(part).payload.legacyMaterials == true, 'Automatic follows a readable Use2022Materials')
 services.MaterialService.Use2022Materials = nil
 print('Material and MaterialVariant serialization checks passed')
+
+part.Material = Materials.Plastic
+for _, face in {'Right', 'Left', 'Top', 'Bottom', 'Back', 'Front'} do
+    part[face .. 'Surface'] = {Name = 'Studs'}
+end
+local surfaces = serializer.serialize(part).payload.parts[1].surfaces
+for _, face in {'Right', 'Left', 'Top', 'Bottom', 'Back', 'Front'} do
+    assert(surfaces[face] == 'Studs', face .. 'Surface must reach the renderer')
+end
+for _, name in {'Smooth', 'Glue', 'Weld', 'Studs', 'Inlet', 'Universal', 'Hinge', 'Motor', 'SteppingMotor', 'SmoothNoOutlines'} do
+    part.TopSurface = {Name = name}
+    local top = serializer.serialize(part).payload.parts[1].surfaces.Top
+    assert(top == (if name == 'Smooth' or name == 'SmoothNoOutlines' then nil else name))
+end
+part.Material = Materials.SmoothPlastic
+part.TopSurface = {Name = 'Studs'}
+assert(serializer.serialize(part).payload.parts[1].surfaces == nil, 'SmoothPlastic hides surface textures')
+part.TopSurface = {Name = 'Motor'}
+assert(serializer.serialize(part).payload.parts[1].surfaces.Top == 'Motor', 'Pins are visible on other materials')
+part.Material = Materials.Plastic
+part.TopSurface = {Name = 'Studs'}
+table.insert(variants, {Name = 'CustomPlastic', BaseMaterial = Materials.Plastic,
+    StudsPerTile = 2, IsA = function(_, class) return class == 'MaterialVariant' end})
+overrides.Plastic = 'CustomPlastic'
+assert(serializer.serialize(part).payload.parts[1].surfaces == nil, 'Plastic overrides replace the stud detail')
+overrides.Plastic = nil
+part.IsA = function(_, class) return class == 'BasePart' or class == 'MeshPart' or class == 'PVInstance' end
+part.MeshContent = content(123)
+assert(serializer.serialize(part).payload.parts[1].surfaces == nil, 'MeshParts do not draw legacy surfaces')
+print('All face surface types, material visibility and pin serialization checks passed')

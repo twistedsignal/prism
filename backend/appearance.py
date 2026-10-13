@@ -230,7 +230,7 @@ def bake_colors(corners, colors):
                     "pixels": base64.b64encode(pixels).decode("ascii")}
 
 
-def bake(corners, size, rgb, base, layers, textures, native_uv=False):
+def bake(corners, size, rgb, base, layers, textures, native_uv=False, surface_faces=None):
     """Preserve geometry and normals; replace UVs with baked part-local projections."""
     from scene import face_normal
 
@@ -255,6 +255,8 @@ def bake(corners, size, rgb, base, layers, textures, native_uv=False):
             normal = face_normal(*points[start : start + 3])
         axis = int(np.argmax(np.abs(normal)))
         index = axis * 2 + (0 if normal[axis] > 0 else 1)
+        if surface_faces is not None:
+            index = surface_faces[start]
         # Axis Z uses Back then Front.
         face_indices.extend([index] * 3)
         uv = np.clip(

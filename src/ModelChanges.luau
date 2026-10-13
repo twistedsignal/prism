@@ -1,6 +1,7 @@
 -- Watch properties consumed by the serializer, without reacting to physics or editor metadata.
 const PROPERTIES = {
-	BasePart = { "Name", "CFrame", "Size", "Color", "Transparency", "Material", "MaterialVariant", "PivotOffset" },
+	BasePart = { "Name", "CFrame", "Size", "Color", "Transparency", "Material", "MaterialVariant", "PivotOffset",
+		"RightSurface", "LeftSurface", "TopSurface", "BottomSurface", "BackSurface", "FrontSurface" },
 	Part = { "Shape" },
 	MeshPart = { "MeshId", "MeshContent", "MeshSize", "TextureID", "TextureContent" },
 	PartOperation = { "UsePartColor", "MeshData", "AssetId" },

@@ -150,6 +150,8 @@ Image effects reuse the rendered image, so every effect edit skips Blender entir
 
 R15 classic clothing uses Roblox's compositing UV maps and preserves the body meshes' original UV islands, including wrists, knees and ankles. Primitive fallback parts sample the sleeve or pant seam at internal joints instead of repeating the shoulder or hip cap.
 
+Part [surface types](https://create.roblox.com/docs/reference/engine/enums/SurfaceType) render on all six faces. Plastic parts show studs, inlets, universal checker patterns and weld/glue marks with Studio's grid spacing and orientation. Hinges show a yellow pin; motors and stepping motors also show a gray ring. Smooth and SmoothNoOutlines stay plain. Surface textures follow Studio's Plastic material visibility, while pins remain visible on other materials. Decals and clothing cover the surface texture, and editing a surface property refreshes the preview. Blocks, wedges, corner wedges, balls, cylinders and built-in SpecialMesh shapes support surface rendering.
+
 Selected models refresh automatically when you edit their geometry, colors, materials, textures or clothing, or add and remove descendants. Rapid edits are combined before Prism sends a new scene. Your render settings stay in place.
 
 Text supports full-color emoji, including skin tones, flags and joined sequences. Choose Apple, Google, Facebook or Twitter in **Settings > Emoji provider**. Emoji images download on first use and stay cached for offline rendering. If a provider lacks an emoji, Prism uses an available provider, preferring Google. Roblox's Verified `\u{E000}`, Premium `\u{E001}`, Robux `\u{E002}` and Roblox Plus `\u{E003}` glyphs also work with any text font. Paste the characters or type these Unicode escapes into Text. Robux, Premium and Plus use the text color; emoji and Verified keep their original colors.
@@ -212,4 +214,4 @@ Releases are published by `.github/workflows/release.yml` when the version in `w
 
 ## License
 
-Prism is released under the [MIT License](LICENSE). The meshes in `backend/clothing/` and `backend/primitives/` come from Roblox Studio and belong to Roblox Corporation.
+Prism is released under the [MIT License](LICENSE). The meshes in `backend/clothing/` and `backend/primitives/`, and the texture tiles in `backend/surfaces/`, come from Roblox Studio and belong to Roblox Corporation.

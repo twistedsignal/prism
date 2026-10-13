@@ -448,62 +448,9 @@ def build(payload, directory):
         material_lines.append("")
         return name
 
-    for index, part in enumerate(parts):
-        if not isinstance(part, dict):
-            raise SceneError(f"Part {index} must be an object")
-        kind = part.get("kind")
-        size = vector(part.get("size"), "part size")
-        cframe = vector(part.get("cframe"), "part cframe", 12)
-        transparency = part.get("transparency", 0)
-        if not isinstance(transparency, (int, float)) or not math.isfinite(transparency):
-            transparency = 0
-        transparency = min(max(float(transparency), 0.0), 1.0)
-        if transparency >= 1.0:
-            continue
-        if kind == "mesh":
-            corners = mesh_corners(part.get("mesh"))
-        elif kind in PRIMITIVES:
-            corners = PRIMITIVES[kind](size)
-        else:
-            raise SceneError(f"Unknown part kind {kind!r}")
-        if isinstance(part.get("warning"), str):
-            warnings.append(part["warning"])
-
-        position = cframe[:3]
-        r = cframe[3:]
-        texture = part.get("texture")
-        rgb = color_of(part)
-        if isinstance(part.get("material"), dict) and part["material"].get("name") == "Neon":
-            import materials as roblox_materials
-            rgb = roblox_materials.neon_color(rgb)
-        surface = material_texture(part, textures, payload.get("legacyMaterials") is True)
-        layers = list(part.get("layers") or [])
-        colors = decode_floats(part["mesh"].get("colors"), "mesh colors") if kind == "mesh" else None
-        if colors is not None:
-            if len(colors) != len(corners) * 3 or any(c < 0 or c > 1 for c in colors):
-                raise SceneError("Mesh colors must have one RGB value in [0, 1] per corner")
-            import appearance
-            corners, baked = appearance.bake_colors(corners, colors)
-            color_id = f"union-colors:{index}"
-            textures[color_id] = baked
-            texture = {"id": color_id, "mode": "alpha"}
-            rgb = (1.0, 1.0, 1.0)
-        if surface and (layers or colors is not None):
-            # Decals and clothing sit on top of the material.
-            layers.insert(0, {"id": surface[0], "repeat": [surface[1], surface[1]], "tint": list(rgb),
-                              "multiply": colors is not None})
-        if layers:
-            import appearance
-            corners, baked = appearance.bake(corners, size, rgb, texture, layers, textures,
-                                             native_uv=kind == "mesh" and part["mesh"].get("uvs") is not None)
-            baked_id = f"appearance:{index}"
-            textures[baked_id] = baked
-            texture = {"id": baked_id, "mode": "alpha"}
-        elif surface:
-            # Plain part color here; the renderer multiplies the shared material
-            # texture in afterwards, so parts never need one texture per color.
-            corners = box_uvs(corners, surface[1])
-        material = material_for(rgb, transparency, texture, surface[0] if surface and not layers else None)
+    def emit(corners, material, cframe):
+        nonlocal vertex_count
+        position, r = cframe[:3], cframe[3:]
         face_lines.append(f"usemtl {material}")
         positions, uvs, normals = [], [], []
         for point, uv, normal in corners:
@@ -526,6 +473,86 @@ def build(payload, directory):
         for i in range(vertex_count + 1, vertex_count + len(corners) + 1, 3):
             face_lines.append(f"f {i}/{i}/{i} {i + 1}/{i + 1}/{i + 1} {i + 2}/{i + 2}/{i + 2}")
         vertex_count += len(corners)
+
+
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict):
+            raise SceneError(f"Part {index} must be an object")
+        kind = part.get("kind")
+        size = vector(part.get("size"), "part size")
+        cframe = vector(part.get("cframe"), "part cframe", 12)
+        transparency = part.get("transparency", 0)
+        if not isinstance(transparency, (int, float)) or not math.isfinite(transparency):
+            transparency = 0
+        transparency = min(max(float(transparency), 0.0), 1.0)
+        if transparency >= 1.0:
+            continue
+        if kind == "mesh":
+            corners = mesh_corners(part.get("mesh"))
+        elif kind in PRIMITIVES:
+            corners = PRIMITIVES[kind](size)
+        else:
+            raise SceneError(f"Unknown part kind {kind!r}")
+        if isinstance(part.get("warning"), str):
+            warnings.append(part["warning"])
+
+        texture = part.get("texture")
+        rgb = color_of(part)
+        if isinstance(part.get("material"), dict) and part["material"].get("name") == "Neon":
+            import materials as roblox_materials
+            rgb = roblox_materials.neon_color(rgb)
+        surface = material_texture(part, textures, payload.get("legacyMaterials") is True)
+        layers = list(part.get("layers") or [])
+        import part_surfaces as legacy_surfaces
+        part_surfaces = legacy_surfaces.validate(part.get("surfaces"))
+        if kind == "mesh":
+            part_surfaces = {}
+        original_corners = corners
+        surface_groups, surface_faces = None, None
+        if part_surfaces:
+            material_info = part.get("material") or {}
+            plastic = not texture and material_info.get("name", "Plastic") == "Plastic" and not material_info.get("variant")
+            patterns = part_surfaces if plastic else {}
+            surface_groups, surface_layers, surface_faces = legacy_surfaces.prepare(
+                corners, size, kind, patterns, rgb, textures)
+            if layers:
+                layers = surface_layers + layers
+        colors = decode_floats(part["mesh"].get("colors"), "mesh colors") if kind == "mesh" else None
+        if colors is not None:
+            if len(colors) != len(corners) * 3 or any(c < 0 or c > 1 for c in colors):
+                raise SceneError("Mesh colors must have one RGB value in [0, 1] per corner")
+            import appearance
+            corners, baked = appearance.bake_colors(corners, colors)
+            color_id = f"union-colors:{index}"
+            textures[color_id] = baked
+            texture = {"id": color_id, "mode": "alpha"}
+            rgb = (1.0, 1.0, 1.0)
+        if surface and (layers or colors is not None):
+            # Decals and clothing sit on top of the material.
+            layers.insert(0, {"id": surface[0], "repeat": [surface[1], surface[1]], "tint": list(rgb),
+                              "multiply": colors is not None})
+        if layers:
+            import appearance
+            corners, baked = appearance.bake(corners, size, rgb, texture, layers, textures,
+                                             native_uv=kind == "mesh" and part["mesh"].get("uvs") is not None,
+                                             surface_faces=surface_faces)
+            baked_id = f"appearance:{index}"
+            textures[baked_id] = baked
+            texture = {"id": baked_id, "mode": "alpha"}
+        elif surface:
+            # Plain part color here; the renderer multiplies the shared material
+            # texture in afterwards, so parts never need one texture per color.
+            corners = box_uvs(corners, surface[1])
+        if surface_groups is not None and not layers:
+            for texture_id, group in surface_groups.items():
+                group_texture = {"id": texture_id, "mode": "alpha"} if texture_id else texture
+                emit(group, material_for(rgb, transparency, group_texture), cframe)
+        else:
+            material = material_for(rgb, transparency, texture, surface[0] if surface and not layers else None)
+            emit(corners, material, cframe)
+        if part_surfaces:
+            for geometry, pin_color in legacy_surfaces.indicators(original_corners, kind, part_surfaces):
+                emit(geometry, material_for(pin_color, transparency, None), cframe)
 
     if vertex_count == 0:
         raise SceneError("Scene has no visible geometry")
@@ -583,7 +610,7 @@ class SceneCache:
         # Resolved bytes change the ID after credential repair, invalidating renderer objects.
         # Bump the prefix when generated textures change, so cached scenes rebuild.
         resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        identifier = scene_id(b"appearance-v11:" + resolved)
+        identifier = scene_id(b"appearance-v12:" + resolved)
         if incomplete:
             identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier

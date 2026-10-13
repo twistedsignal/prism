@@ -66,4 +66,11 @@ variant.Changed.fire("ColorMap")
 materialService.Changed.fire("PlasticName")
 assert(edits == 12, "Shared material variants and overrides must refresh")
 stopMaterials()
+local surfaceEdits = 0
+local stopSurfaces = changes.watch(part, function() surfaceEdits += 1 end)
+for _, face in {"Right", "Left", "Top", "Bottom", "Back", "Front"} do
+    part.Changed.fire(face .. "Surface")
+end
+assert(surfaceEdits == 6, "All face surface edits refresh the scene")
+stopSurfaces()
 print("Model visual property, descendant, material and watcher cleanup checks passed")
