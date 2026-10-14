@@ -865,8 +865,17 @@ const function RenderPage(props: Props): Frame
 			VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
 
 			Theme.stroke(Theme.BORDER),
-			vide.show(store.schema, function(schema)
-				return SettingsSections(store, schema :: any, settingsQuery)
+			-- A truthy-to-truthy schema update must replace the controls too.
+			vide.values(function(): { Types.Schema }
+				const schema = store.schema()
+				return if schema then { schema } else {}
+			end, function(schema)
+				return SettingsSections(store, function()
+					return schema
+				end, settingsQuery)
+			end),
+			vide.show(function()
+				return store.schema() == nil
 			end, function()
 				return label({
 					text = function()

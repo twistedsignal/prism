@@ -49,7 +49,7 @@ local function model(name)
 		thumbnailVersion = source(1), thumbnail = name .. " image" }
 end
 local part, ronaldo, other = model("Part"), model("Ronaldo"), model("Other")
-local store = { models = source({ part }), selected = source(1), config = source(nil), previewView = source("blender") }
+local store = { models = source({ part }), selected = source(1), config = source(nil), schema = source(nil), previewView = source("blender") }
 store.select = function(index) store.selected(index) end
 local dispose = root(function()
 	page({ store = store, connected = function() return false end, rootSize = function() return roblox.Vector2.new(720, 860) end })
