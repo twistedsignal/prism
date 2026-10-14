@@ -193,8 +193,8 @@ const function create(plugin: Plugin, bridge: Bridge)
 		end)
 	end
 
-	const function defaults(): Types.Settings
-		const current = schema()
+	const function defaults(nextSchema: Types.Schema?): Types.Settings
+		const current = nextSchema or schema()
 		const result = if current then cloneSettings(current.defaults) else {}
 		for key, value in lastSettings do
 			if result[key] ~= nil and type(value) == type(result[key]) then
@@ -515,6 +515,10 @@ const function create(plugin: Plugin, bridge: Bridge)
 				end
 				continue
 			end
+			const settings = cloneSettings(initial)
+			for key, value in rememberedSettings[root] or {} do
+				settings[key] = value
+			end
 			const model: Types.Model = {
 				id = HttpService:GenerateGUID(false),
 				name = root.Name,
@@ -522,7 +526,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 				sceneId = source(nil :: string?),
 				state = source("serializing" :: Types.ModelState),
 				warning = source(nil :: string?),
-				settings = source(cloneSettings(rememberedSettings[root] or initial)),
+				settings = source(settings),
 				assetId = source(nil :: string?),
 				thumbnail = nil,
 				thumbnailVersion = source(0),
@@ -935,18 +939,17 @@ const function create(plugin: Plugin, bridge: Bridge)
 	const function loadRemote()
 		const schemaResponse = bridge.request("GET", "/schema")
 		if schemaResponse.ok then
-			const firstLoad = schema() == nil
-			schema(schemaResponse.body)
-			if firstLoad then
-				-- models created before the schema loaded get the defaults now.
-				for _, model in models() do
-					const settings = defaults()
-					for key, value in model.settings() do
-						settings[key] = value
-					end
-					model.settings(settings)
+			const nextSchema = schemaResponse.body :: Types.Schema
+			-- Vide renders synchronously when the schema changes. Fill missing
+			-- settings first, including defaults added by a backend update.
+			for _, model in models() do
+				const settings = defaults(nextSchema)
+				for key, value in model.settings() do
+					settings[key] = value
 				end
+				model.settings(settings)
 			end
+			schema(nextSchema)
 		end
 		const configResponse = bridge.request("GET", "/config")
 		if configResponse.ok then
