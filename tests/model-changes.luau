@@ -74,3 +74,12 @@ end
 assert(surfaceEdits == 6, "All face surface edits refresh the scene")
 stopSurfaces()
 print("Model visual property, descendant, material and watcher cleanup checks passed")
+
+local body = instance({ "CharacterMesh" })
+local bodyEdits = 0
+local stopBody = changes.watch(body, function() bodyEdits += 1 end)
+for _, property in { "BodyPart", "MeshId", "MeshContent", "BaseTextureId", "BaseTextureContent", "OverlayTextureId", "OverlayTextureContent" } do
+	body.Changed.fire(property)
+end
+assert(bodyEdits == 7, "CharacterMesh edits must refresh renders")
+stopBody()

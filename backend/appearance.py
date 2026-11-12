@@ -296,6 +296,18 @@ def bake(corners, size, rgb, base, layers, textures, native_uv=False, surface_fa
         if layer.get("id") not in textures:
             continue
         image = image_of(layer, textures)
+        if layer.get("nativeUv"):
+            # CharacterMesh overlays use the mesh UVs and cover classic clothing.
+            for start in range(0, len(corners), 3):
+                raster = raster_triangle(projected[start:start + 3] * (TILE - 1), TILE, TILE)
+                if raster is None:
+                    continue
+                window, weights, inside = raster
+                uv = weights @ original_uvs[start:start + 3]
+                foreground = sample(image, uv, repeat=True).copy()
+                target = tiles[face_indices[start]][window]
+                target[inside] = over(target, foreground)[inside]
+            continue
         for index, face in enumerate(FACES):
             if layer.get("face") and layer["face"] != face:
                 continue

@@ -34,6 +34,30 @@ def texel(baked, uv):
 
 
 class AppearanceTests(unittest.TestCase):
+    def test_character_mesh_overlay_uses_original_uvs_above_clothing(self):
+        corners = [(point, (0.75, 0.5), normal) for point, _, normal in scene.block([1, 2, 1])]
+        textures = {
+            "base": texture([[[0, 255, 0, 255]]]),
+            "shirt": texture([[[255, 0, 0, 255]]]),
+            "overlay": texture([[[255, 255, 0, 255], [0, 0, 255, 128]]]),
+        }
+        result, baked = appearance.bake(corners, [1, 2, 1], [1, 1, 1],
+            {"id": "base", "mode": "overlay"},
+            [{"id": "shirt", "region": "torso"}, {"id": "overlay", "nativeUv": True}],
+            textures, native_uv=True)
+        uv = np.mean([corner[1] for corner in result[:3]], axis=0)
+        self.assertEqual(texel(baked, uv), (127, 0, 128, 255))
+        self.assertEqual([c[0] for c in result], [c[0] for c in corners])
+
+    def test_union_origin_survives_nonuniform_scaling(self):
+        import struct
+
+        positions = [10, 20, 30, 12, 20, 30, 10, 23, 30]
+        mesh = {"positions": base64.b64encode(struct.pack("<9f", *positions)).decode(),
+                "center": False, "scale": [2, 3, 1]}
+        corners = scene.mesh_corners(mesh)
+        self.assertEqual([c[0] for c in corners], [(20, 60, 30), (24, 60, 30), (20, 69, 30)])
+
     def test_union_colors_preserve_separate_faces_and_corner_gradients(self):
         corners = scene.block([1, 1, 1])[:6]
         colors = [1, 0, 0] * 3 + [0, 0, 1] * 3

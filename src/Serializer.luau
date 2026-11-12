@@ -132,6 +132,9 @@ const function contentOf(instance: Instance, contentProperty: string, idProperty
 	const idOk, id = pcall(function()
 		return (instance :: any)[idProperty]
 	end)
+	if idOk and type(id) == "number" and id > 0 then
+		return Content.fromUri(`rbxassetid://{id}`)
+	end
 	if idOk and type(id) == "string" and not isEmpty(id) then
 		return Content.fromUri(id)
 	end
@@ -410,7 +413,31 @@ const LIMBS = {
 	LeftUpperLeg = { "left", "leg" }, LeftLowerLeg = { "left", "leg" }, LeftFoot = { "left", "leg" },
 }
 
-const function appearanceLayers(context: Context, part: BasePart): { any }
+const R6_BODY_PARTS = {
+	Head = "Head", Torso = "Torso",
+	["Left Arm"] = "LeftArm", ["Right Arm"] = "RightArm",
+	["Left Leg"] = "LeftLeg", ["Right Leg"] = "RightLeg",
+}
+
+const function characterMeshOf(part: BasePart): CharacterMesh?
+	const rig = part.Parent
+	const bodyPart = R6_BODY_PARTS[part.Name]
+	if not bodyPart or not part:IsA("Part") or not rig then
+		return nil
+	end
+	const humanoid = rig:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.RigType ~= Enum.HumanoidRigType.R6 then
+		return nil
+	end
+	for _, child in rig:GetChildren() do
+		if child:IsA("CharacterMesh") and child.BodyPart.Name == bodyPart then
+			return child :: CharacterMesh
+		end
+	end
+	return nil
+end
+
+const function appearanceLayers(context: Context, part: BasePart, characterMesh: CharacterMesh?): { any }
 	const layers = {}
 	const function add(content: Content?, properties: { [string]: any })
 		const texture = addTexture(context, content, "alpha")
@@ -468,6 +495,9 @@ const function appearanceLayers(context: Context, part: BasePart): { any }
 					tint = { clothing.Color3.R, clothing.Color3.G, clothing.Color3.B }, graphic = true })
 			end
 		end
+	end
+	if characterMesh then
+		add(contentOf(characterMesh, "OverlayTextureContent", "OverlayTextureId"), { nativeUv = true })
 	end
 	local decals = {}
 	for _, child in part:GetChildren() do
@@ -541,7 +571,24 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 	}
 
 	const specialMesh = part:FindFirstChildWhichIsA("SpecialMesh")
-	if part:IsA("MeshPart") then
+	const characterMesh = characterMeshOf(part)
+	if characterMesh then
+		const data = meshData(contentOf(characterMesh, "MeshContent", "MeshId"))
+		if data then
+			-- R6 body meshes are authored in studs against the standard limb size.
+			const baseSize = if part.Name == "Torso" then Vector3.new(2, 2, 1)
+				elseif part.Name == "Head" then Vector3.new(2, 1, 1) else Vector3.new(1, 2, 1)
+			const scale = part.Size / baseSize
+			data.scale = { scale.X, scale.Y, scale.Z }
+			data.center = false
+			entry.kind = "mesh"
+			entry.mesh = data
+		else
+			entry.kind = "block"
+			entry.warning = PERMISSION_MESH_WARNING
+		end
+		entry.texture = addTexture(context, contentOf(characterMesh, "BaseTextureContent", "BaseTextureId"), "overlay")
+	elseif part:IsA("MeshPart") then
 		const data = meshData(contentOf(part, "MeshContent", "MeshId"))
 		if data then
 			const meshSize = part.MeshSize
@@ -612,7 +659,7 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 	if entry.texture == nil then
 		entry.material = materialOf(context, part)
 	end
-	entry.layers = appearanceLayers(context, part)
+	entry.layers = appearanceLayers(context, part, characterMesh)
 	if entry.kind ~= "mesh" and (part:IsA("Part") or part:IsA("WedgePart") or part:IsA("CornerWedgePart")) then
 		const surfaces = {}
 		const plastic = part.Material == Enum.Material.Plastic and findVariant(context, part) == nil and entry.texture == nil

@@ -118,6 +118,7 @@ local live = load('src/UnionMesh.luau', {
 })
 local data, cframe = live.read(source)
 assert(data.scale[1] == 2 and data.scale[2] == 3 and cframe == temporary.CFrame)
+assert(data.center == false, 'Union vertices must keep their offset from the GeometryService origin')
 assert(source.CFrame == roblox.CFrame.identity and destroyed == 1)
 failSerialization = true
 local failed, _, problem = live.read(source)

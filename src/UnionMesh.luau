@@ -274,7 +274,8 @@ const function parse(data: buffer, useColors: boolean): { [string]: any }
 		normals = pack(normals, faceNormals, 3),
 		uvs = pack(uvs, faces, 2),
 		colors = if useColors then pack(colors, faceColors, 3) else nil,
-		center = true,
+		-- GeometryService keeps vertices relative to the input origin.
+		center = false,
 	}
 end
 
