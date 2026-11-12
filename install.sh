@@ -91,6 +91,10 @@ main() {
 			printf '%s\n' "$PRISM_PLUGINS_DIR"
 			return
 		fi
+		if [[ -f "$install_dir/plugin-dirs.txt" ]]; then
+			cat "$install_dir/plugin-dirs.txt"
+			return
+		fi
 		if [[ "$os" == macos ]]; then
 			printf '%s\n' "$HOME/Documents/Roblox/Plugins"
 			return
@@ -126,6 +130,9 @@ main() {
 		if [[ -f "$cli_path" ]] && grep -q 'Prism managed CLI launcher' "$cli_path"; then
 			rm -f "$cli_path"
 		fi
+		if [[ -f "$install_dir/cache-dir.txt" ]]; then
+			IFS= read -r cache_dir <"$install_dir/cache-dir.txt"
+		fi
 		step "Removing backend..."
 		rm -rf "$install_dir/backend" "$install_dir/.backend-previous" "$cache_dir"
 		step "Removing local Roblox plugin..."
@@ -133,6 +140,7 @@ main() {
 		while IFS= read -r dir; do
 			[[ -n "$dir" ]] && rm -f "$dir/Prism.rbxm"
 		done < <(plugin_dirs)
+		rm -f "$install_dir/installation.json" "$install_dir/plugin-dirs.txt" "$install_dir/cache-dir.txt"
 		echo
 		ok "Prism has been uninstalled. Raven, your settings and presets were left in place."
 		return 0
@@ -213,7 +221,7 @@ main() {
 		if have_python; then
 			python3 -c "$code"
 		else
-			"${blender[@]}" --background --factory-startup --python-expr "$code" 2>/dev/null |
+			"${blender[@]}" --background --factory-startup --python-exit-code 1 --python-expr "$code" 2>/dev/null |
 				sed -n 's/^PRISM://p'
 		fi
 	}
@@ -414,7 +422,7 @@ print(("PRISM:" if "bpy" in sys.modules else "") + key)
 		printf '%s' "$api_key" | python3 -c "$save_code" "$credentials" "$key_name" "$owner_id"
 	else
 		printf '%s' "$api_key" | PRISM_CREDENTIALS="$credentials" PRISM_KEY_NAME="$key_name" PRISM_OWNER="$owner_id" \
-			"${blender[@]}" --background --factory-startup --python-expr "$save_code" >/dev/null 2>&1
+			"${blender[@]}" --background --factory-startup --python-exit-code 1 --python-expr "$save_code" >/dev/null 2>&1
 	fi
 	api_key=""
 	echo
@@ -448,6 +456,31 @@ print(("PRISM:" if "bpy" in sys.modules else "") + key)
 	mv "$staging/backend" "$install_dir/backend"
 
 	# ------------------------------------------------------------
+	# Plugin
+	# ------------------------------------------------------------
+
+	step "Installing local Roblox plugin..."
+	local -a targets=()
+	local dir
+	while IFS= read -r dir; do
+		[[ -n "$dir" ]] && targets+=("$dir")
+	done < <(plugin_dirs)
+	if [[ ${#targets[@]} -eq 0 ]]; then
+		warn "Couldn't find Roblox Studio (Vinegar)."
+		dir="$(ask "Enter your Studio Plugins folder, or press enter to skip: ")"
+		[[ -n "$dir" ]] && targets+=("$dir")
+	fi
+	for dir in "${targets[@]}"; do
+		mkdir -p "$dir"
+		cp "$staging/Prism.rbxm" "$dir/Prism.rbxm"
+		printf '%s  %s%s\n' "$dim" "$dir/Prism.rbxm" "$reset"
+	done
+	if [[ ${#targets[@]} -eq 0 ]]; then
+		warn "Skipped. Download Prism.rbxm from the release page and put it in your Plugins folder."
+	fi
+
+
+	# ------------------------------------------------------------
 	# Startup
 	# ------------------------------------------------------------
 
@@ -459,8 +492,11 @@ print(("PRISM:" if "bpy" in sys.modules else "") + key)
 	if [[ "${blender[0]}" != flatpak ]]; then
 		install_args+=(--blender "${blender[0]}")
 	fi
+	for dir in "${targets[@]}"; do
+		install_args+=(--plugins "$dir")
+	done
 	local startup_log="$staging/startup.log"
-	if ! "${blender[@]}" --background --factory-startup --python "$install_dir/backend/main.py" -- "${install_args[@]}" >"$startup_log" 2>&1; then
+	if ! "${blender[@]}" --background --factory-startup --python-exit-code 1 --python "$install_dir/backend/main.py" -- "${install_args[@]}" >"$startup_log" 2>&1; then
 		# Show why it failed (no systemd user session, launchctl errors, ...).
 		grep -Ev '^(Blender |Read prefs|$)' "$startup_log" | tail -n 15 >&2 || true
 		if [[ "$os" == linux ]] && ! systemctl --user show-environment >/dev/null 2>&1; then
@@ -493,35 +529,12 @@ print(("PRISM:" if "bpy" in sys.modules else "") + (str(port) if isinstance(port
 	done
 	if [[ "$started" == false ]]; then
 		if [[ "$os" == macos ]]; then
-			warn "The backend didn't respond yet. Check ~/Library/Logs/Prism.log."
+			fail "The backend did not start. Check ~/Library/Logs/Prism.log."
 		else
-			warn "The backend didn't respond yet. Check: journalctl --user -u prism"
+			fail "The backend did not start. Check: journalctl --user -u prism"
 		fi
 	fi
 
-	# ------------------------------------------------------------
-	# Plugin
-	# ------------------------------------------------------------
-
-	step "Installing local Roblox plugin..."
-	local -a targets=()
-	local dir
-	while IFS= read -r dir; do
-		[[ -n "$dir" ]] && targets+=("$dir")
-	done < <(plugin_dirs)
-	if [[ ${#targets[@]} -eq 0 ]]; then
-		warn "Couldn't find Roblox Studio (Vinegar)."
-		dir="$(ask "Enter your Studio Plugins folder, or press enter to skip: ")"
-		[[ -n "$dir" ]] && targets+=("$dir")
-	fi
-	for dir in "${targets[@]}"; do
-		mkdir -p "$dir"
-		cp "$staging/Prism.rbxm" "$dir/Prism.rbxm"
-		printf '%s  %s%s\n' "$dim" "$dir/Prism.rbxm" "$reset"
-	done
-	if [[ ${#targets[@]} -eq 0 ]]; then
-		warn "Skipped. Download Prism.rbxm from the release page and put it in your Plugins folder."
-	fi
 
 	echo
 	printf '%s%sPrism v%s has been installed!%s\n' "$green" "$bold" "$version" "$reset"

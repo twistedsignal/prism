@@ -119,3 +119,8 @@ assert(escaped.items[1].insert == "ReplicatedStorage/Content/A\\/B", "Suggestion
 assert(#PathGlob.complete(game, "Nowhere/").items == 0, "Missing parents have no suggestions")
 
 print("Path glob checks passed")
+
+for _, pattern in { "[!]", "[^]", "[z-a]", "[", "[abc", "\\[!\\]" } do
+	local ok, problem = pcall(PathGlob.match, game, pattern)
+	assert(ok, `User pattern {pattern} must not raise: {problem}`)
+end

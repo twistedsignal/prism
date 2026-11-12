@@ -77,6 +77,7 @@ const function cloneSettings(settings: Types.Settings): Types.Settings
 end
 
 const function create(plugin: Plugin, bridge: Bridge)
+	const previewClient = `preview:{HttpService:GenerateGUID(false)}`
 	const schema = source(nil :: Types.Schema?)
 	const config = source(nil :: Types.Config?)
 	const presets = source({} :: { [string]: Types.Settings })
@@ -154,6 +155,12 @@ const function create(plugin: Plugin, bridge: Bridge)
 		const list = {}
 		for _, template in saved.templates do
 			if type(template) == "table" and type(template.name) == "string" and type(template.item) == "string" then
+				-- Upgrade only the exact built-in text from older saved defaults.
+				if template.item == '{\n\tName = "{RENDER_NAME}",\n\tImageContent = Content.fromAssetId({UPLOAD_ASSET_ID}),\n},' then
+					template.item = '{\n\tName = {RENDER_NAME|quote},\n\tImageContent = Content.fromAssetId({UPLOAD_ASSET_ID}),\n},'
+				elseif template.item == "{RENDER_NAME|upper_snake} = {UPLOAD_ASSET_ID}," then
+					template.item = "{RENDER_NAME|upper_snake|key} = {UPLOAD_ASSET_ID},"
+				end
 				table.insert(list, template)
 			end
 		end
@@ -222,15 +229,20 @@ const function create(plugin: Plugin, bridge: Bridge)
 
 	const function writeImage(image: EditableImage?, body: any): EditableImage?
 		const size = Vector2.new(body.width, body.height)
-		local target = image
-		if target == nil or target.Size ~= size then
-			if target then
+		const target = if image and image.Size == size then image else AssetService:CreateEditableImage({ Size = size })
+		assert(target, "EditableImage could not be created; free image memory and retry")
+		const ok, problem = pcall(function()
+			target:WritePixelsBuffer(Vector2.zero, size, Base64.decode(body.pixels))
+		end)
+		if not ok then
+			if target ~= image then
 				target:Destroy()
 			end
-			target = AssetService:CreateEditableImage({ Size = size })
+			error(problem, 0)
 		end
-		assert(target, "EditableImage could not be created")
-		target:WritePixelsBuffer(Vector2.zero, size, Base64.decode(body.pixels))
+		if image and target ~= image then
+			image:Destroy()
+		end
 		return target
 	end
 
@@ -322,7 +334,7 @@ const function create(plugin: Plugin, bridge: Bridge)
 				end
 				const revision = previewRevision
 				previewState("rendering")
-				const response = render(model, nil, "preview")
+				const response = render(model, nil, previewClient)
 				if destroyed or model ~= currentModel() or revision ~= previewRevision then
 					continue
 				end
@@ -333,7 +345,14 @@ const function create(plugin: Plugin, bridge: Bridge)
 						textPreviewing(false)
 					end
 				elseif response.ok then
-					previewImage = writeImage(previewImage, response.body)
+					const written, image = pcall(writeImage, previewImage, response.body)
+					if not written then
+						previewState("error")
+						previewError(tostring(image))
+						textPreviewing(false)
+						continue
+					end
+					previewImage = image
 					previewTextBounds(response.body.textBounds)
 					previewVersion(previewVersion() + 1)
 					previewState("idle")
@@ -344,7 +363,10 @@ const function create(plugin: Plugin, bridge: Bridge)
 					if auto3d() then
 						previewView("blender")
 					end
-				elseif response.status ~= 409 then
+				elseif response.status == 409 then
+					previewState("idle")
+					textPreviewing(false)
+				else
 					previewState("error")
 					previewError(response.error)
 					if not textDragActive then
@@ -378,8 +400,13 @@ const function create(plugin: Plugin, bridge: Bridge)
 				const revision = modelRevisions[model.id]
 				const response = render(model, THUMBNAIL_SIZE, `thumb:{model.id}`)
 				if not destroyed and table.find(models(), model) and revision == modelRevisions[model.id] and response and response.ok then
-					model.thumbnail = writeImage(model.thumbnail, response.body)
-					model.thumbnailVersion(model.thumbnailVersion() + 1)
+					const written, image = pcall(writeImage, model.thumbnail, response.body)
+					if written then
+						model.thumbnail = image
+						model.thumbnailVersion(model.thumbnailVersion() + 1)
+					else
+						model.warning(`Could not update thumbnail: {image}`)
+					end
 				end
 			end
 			thumbnailBusy = false
@@ -1097,22 +1124,18 @@ const function create(plugin: Plugin, bridge: Bridge)
 		const result = {}
 		const included = {}
 		for _, model in list do
-			if model.sceneId() == nil then
-				sendScene(model)
-			end
-			if model.sceneId() then
-				table.insert(result, {
-					sceneId = model.sceneId(),
-					name = model.name,
-					settings = model.settings(),
-					-- {index} in file names is the model's position in the list.
-					index = table.find(models(), model),
-					-- where the model lives, for templates and history.
-					source = PathGlob.pathOf(model.instance, game),
-					parent = if model.instance.Parent then model.instance.Parent.Name else nil,
-				})
-				table.insert(included, model)
-			end
+			const payload = payloads[model.id]
+			table.insert(result, {
+				sceneId = model.sceneId(),
+				payload = payload,
+				error = if payload == nil then model.warning() or "Model is still being read; try again when it is ready" else nil,
+				name = model.name,
+				settings = model.settings(),
+				index = table.find(models(), model),
+				source = PathGlob.pathOf(model.instance, game),
+				parent = if model.instance.Parent then model.instance.Parent.Name else nil,
+			})
+			table.insert(included, model)
 		end
 		return result, included
 	end

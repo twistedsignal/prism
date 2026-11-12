@@ -21,7 +21,7 @@ local function signal()
 end
 local function instance(classes)
     return {
-        Changed = signal(), DescendantAdded = signal(), DescendantRemoving = signal(),
+        Changed = signal(), AncestryChanged = signal(), DescendantAdded = signal(), DescendantRemoving = signal(),
         IsA = function(_, class) return table.find(classes, class) ~= nil end,
         GetDescendants = function() return {} end,
     }
@@ -83,3 +83,28 @@ for _, property in { "BodyPart", "MeshId", "MeshContent", "BaseTextureId", "Base
 end
 assert(bodyEdits == 7, "CharacterMesh edits must refresh renders")
 stopBody()
+
+local rig = instance({ "Model" })
+local arm = instance({ "BasePart", "Part" })
+local rigShirt = instance({ "Shirt" })
+local bodyMesh = instance({ "CharacterMesh" })
+rig.FindFirstChildOfClass = function(_, class) return if class == "Humanoid" then {} else nil end
+rig.GetDescendants = function() return { arm, rigShirt, bodyMesh } end
+arm.Parent = rig
+local limbEdits = 0
+local stopLimb = changes.watch(arm, function() limbEdits += 1 end)
+rigShirt.Changed.fire("ShirtTemplate")
+bodyMesh.Changed.fire("MeshId")
+assert(limbEdits == 2, "Selected limbs observe sibling clothing and CharacterMesh edits")
+local pants = instance({ "Pants" })
+rig.DescendantAdded.fire(pants)
+pants.Changed.fire("PantsTemplate")
+assert(limbEdits == 4, "New sibling appearances are observed")
+arm.Parent = nil
+arm.AncestryChanged.fire()
+local disconnected = limbEdits
+rigShirt.Changed.fire("ShirtTemplate")
+assert(limbEdits == disconnected, "Reparented limbs release the previous rig scope")
+arm.Changed.fire("Size")
+assert(limbEdits == disconnected + 1)
+stopLimb()

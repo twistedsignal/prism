@@ -254,7 +254,7 @@ class Broker:
                     result["imageId"] = resolver.decal_image_id(result["assetId"])
             except Exception as error:  # Report failures without abandoning the remaining targets.
                 result["error"] = str(error)
-            self.bridge.store.record_history("upload" if item["upload"] else "render", [dict(result, **origin(item))], item.get("creator"))
+            self.bridge.store.record_history("upload" if item["upload"] else "render", [dict(result, **origin({"path": snapshot.get("path") or item.get("path")}))], item.get("creator"))
             results.append(result)
             with self.lock:
                 job["results"] = copy.deepcopy(results)

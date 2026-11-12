@@ -87,6 +87,7 @@ for _, keyword in
 		"and",
 		"break",
 		"continue",
+		"const",
 		"do",
 		"else",
 		"elseif",
@@ -379,7 +380,7 @@ end
 const DEFAULTS: { Template } = {
 	{
 		name = "itemIcon",
-		item = '{\n\tName = "{RENDER_NAME}",\n\tImageContent = Content.fromAssetId({UPLOAD_ASSET_ID}),\n},',
+		item = '{\n\tName = {RENDER_NAME|quote},\n\tImageContent = Content.fromAssetId({UPLOAD_ASSET_ID}),\n},',
 		separator = "\\n",
 	},
 	{
@@ -391,7 +392,7 @@ const DEFAULTS: { Template } = {
 	},
 	{
 		name = "Constants",
-		item = "{RENDER_NAME|upper_snake} = {UPLOAD_ASSET_ID},",
+		item = "{RENDER_NAME|upper_snake|key} = {UPLOAD_ASSET_ID},",
 		separator = "\\n",
 	},
 	{

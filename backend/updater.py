@@ -17,6 +17,7 @@ import zipfile
 from pathlib import Path
 
 import config
+import installation
 
 REPO = "twistedsignal/prism"
 LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -163,9 +164,12 @@ def plugin_changed(running, released):
 
 def plugin_dirs():
     """Studio Plugins folders: ones that already have Prism, else every Studio install found."""
-    candidates = []
     if os.environ.get("PRISM_PLUGINS_DIR"):
-        candidates.append(Path(os.environ["PRISM_PLUGINS_DIR"]))
+        return [Path(os.environ["PRISM_PLUGINS_DIR"]).expanduser()]
+    recorded = installation.read().get("pluginDirs")
+    if isinstance(recorded, list) and recorded and all(isinstance(path, str) and path for path in recorded):
+        return [Path(path) for path in recorded]
+    candidates = []
     if sys.platform == "win32":
         local = os.environ.get("LOCALAPPDATA")
         if local:

@@ -81,7 +81,10 @@ const function ModelCard(props: Props): TextButton
 			Position = UDim2.new(0, 6, 1, -4),
 			Size = UDim2.new(1, -12, 0, 18),
 			BackgroundTransparency = 1,
-			Text = model.name,
+			Text = function()
+				model.visualVersion()
+				return model.name
+			end,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			TextColor3 = function()
 				return if props.selected() then Theme.TEXT else Theme.MUTED

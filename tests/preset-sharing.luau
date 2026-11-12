@@ -19,7 +19,7 @@ local modules = {
 }
 local Store = luau.load(fs.readFile('src/Store.luau'):gsub('%f[%w]const%f[%W]', 'local'), {environment = {
     require = function(name) return assert(modules[name], name) end,
-    game = {GetService = function() return {UrlEncode = function(_, text) return text end} end}, Vector2 = roblox.Vector2,
+    game = {GetService = function() return {GenerateGUID = function() return "session" end, UrlEncode = function(_, text) return text end} end}, Vector2 = roblox.Vector2,
     task = {spawn = function(fn) table.insert(pending, fn) end, delay = function() end},
 }})()
 local store = Store.create({}, {connected = function() return false end, request = function(method, path, body)

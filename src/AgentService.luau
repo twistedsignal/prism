@@ -141,7 +141,7 @@ const function create(plugin: Plugin): () -> ()
 				end)
 				copy:Destroy()
 				assert(read, tostring(snapshot))
-				return { name = name, payload = snapshot.payload, warnings = snapshot.warnings }
+				return { name = name, path = pathOf(instance), payload = snapshot.payload, warnings = snapshot.warnings }
 			end)
 			table.insert(items, if ok then result else { name = name, error = tostring(result) })
 		end

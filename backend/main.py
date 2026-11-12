@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config  # noqa: E402
+import installation  # noqa: E402
 
 
 def parse_args():
@@ -24,12 +25,14 @@ def parse_args():
     parser.add_argument("--blender", help="Blender executable for the startup entry")
     parser.add_argument("--raven", help="raven executable to record in the config")
     parser.add_argument("--creator", help="Default upload creator (user:<id> or group:<id>)")
+    parser.add_argument("--plugins", action="append", default=[], help="Studio plugin directory to remember for updates")
     parser.add_argument("--managed", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
 def main():
     args = parse_args()
+    installation.restore()
     import runtime
 
     # Old startup entries launch main.py through Blender. Replace that process
@@ -63,6 +66,9 @@ def main():
 
     if args.command == "install":
         import autostart
+        import updater
+
+        installation.save(args.plugins or updater.plugin_dirs())
 
         import cli_install
         info = cli_install.install()

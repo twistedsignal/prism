@@ -52,3 +52,32 @@ local differentShape = 'return {\n\tSword = { id = 1 },\n}'
 result = ScriptInsert.insert(differentShape, { item("Sword", 9) }, true)
 eq(result.replaced, 0, "Blocks with a different shape are not overwritten")
 print("script insert ok")
+
+for _, existingLine in {
+	'Sword = 1 -- existing item',
+	'Sword = "-- not a comment" -- existing item',
+	'Sword = 1 --[[ trailing long comment ]]',
+	'Sword = [[a -- string]] -- existing item',
+	'Sword = 1 --[=[ multi-line\ncomment ]=]',
+} do
+	local source = "return {\n\t" .. existingLine .. "\n}\n"
+	local updated = ScriptInsert.insert(source, { { name = "Shield", text = "Shield = 2," } })
+	assert(pcall(luau.compile, updated.source), updated.source)
+end
+local Template = luau.load((fs.readFile("src/Template.luau"):gsub("%f[%w]const%f[%W]", "local")))()
+for _, filter in { "upper_snake|key", "camel|key", "key", "replace:Sword:Blade|key" } do
+	local template = { name = "Test", item = "{RENDER_NAME|" .. filter .. "} = {UPLOAD_ASSET_ID}," }
+	for _, name in { "FireSword", 'Sword "Deluxe"', "123", "end" } do
+		local first = Template.renderItems(template, { { name = name, assetId = "123" } })
+		local second = Template.renderItems(template, { { name = name, assetId = "456" } })
+		local initial = ScriptInsert.insert("return {\n}\n", first)
+		local updated = ScriptInsert.insert(initial.source, second, true)
+		assert(updated.replaced == 1 and updated.inserted == 0, updated.source)
+		assert(not updated.source:find("123", 1, true) or name == "123")
+		assert(pcall(luau.compile, updated.source), updated.source)
+	end
+end
+local escaped = Template.renderItems(Template.defaults()[1], { { name = 'Sword "Deluxe"', assetId = "123" } })
+local escapedNew = Template.renderItems(Template.defaults()[1], { { name = 'Sword "Deluxe"', assetId = "456" } })
+local initial = ScriptInsert.insert("return {\n}\n", escaped)
+assert(ScriptInsert.insert(initial.source, escapedNew, true).replaced == 1)

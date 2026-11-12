@@ -32,15 +32,18 @@ local part = {
     FindFirstChildWhichIsA = function() return nil end,
     GetPivot = function() return roblox.CFrame.identity end,
 }
+local alphaModes = {
+	Transparency = { Name = "Transparency" }, Overlay = { Name = "Overlay" }, TintMask = { Name = "TintMask" },
+}
 local code = fs.readFile('src/Serializer.luau'):gsub('%f[%w]const%f[%W]', 'local')
 local serializer = luau.load(code, { environment = {
     require = function() return {} end,
     game = { GetService = function(_, name) return services[name] end, CreatorId = 10, CreatorType = 'User' },
     typeof = function(value) return if type(value) == 'table' and value.SourceType then 'Content' else typeof(value) end,
-    Enum = { ContentSourceType = { Uri = 'Uri', None = 'None', Object = 'Object' },
+    Enum = { AlphaMode = alphaModes, ContentSourceType = { Uri = 'Uri', None = 'None', Object = 'Object' },
         InfoType = { Asset = 'Asset' }, CreatorType = { Group = 'Group' }, Material = Materials,
         PartType = { Block = 'Block', Ball = 'Ball', Cylinder = 'Cylinder', Wedge = 'Wedge', CornerWedge = 'CornerWedge' },
-        MeshType = { Brick = 'Brick', Sphere = 'Sphere', Cylinder = 'Cylinder', Wedge = 'Wedge', Head = 'Head' } },
+        MeshType = { FileMesh = 'FileMesh', Brick = 'Brick', Sphere = 'Sphere', Cylinder = 'Cylinder', Wedge = 'Wedge', Head = 'Head' } },
     Vector3 = roblox.Vector3, CFrame = roblox.CFrame,
 } })()
 local result = serializer.serialize(part)
@@ -149,3 +152,21 @@ part.IsA = function(_, class) return class == 'BasePart' or class == 'MeshPart' 
 part.MeshContent = content(123)
 assert(serializer.serialize(part).payload.parts[1].surfaces == nil, 'MeshParts do not draw legacy surfaces')
 print('All face surface types, material visibility and pin serialization checks passed')
+
+local appearance = { ColorMapContent = content(456), Color = roblox.Color3.new(1, 0.5, 0) }
+part.FindFirstChildWhichIsA = function(_, class) return if class == "SurfaceAppearance" then appearance else nil end
+for mode, expected in { Transparency = "alpha", Overlay = "overlay", TintMask = "tintMask" } do
+	appearance.AlphaMode = alphaModes[mode]
+	local entry = serializer.serialize(part).payload.parts[1]
+	assert(entry.texture.mode == expected)
+	assert(entry.texture.tint[1] == 1 and entry.texture.tint[2] == 0.5 and entry.texture.tint[3] == 0)
+end
+local fileMesh = {
+	MeshType = "FileMesh", MeshContent = content(123), TextureContent = content(456),
+	Scale = roblox.Vector3.one, Offset = roblox.Vector3.zero, VertexColor = roblox.Vector3.new(1, 0.5, 0),
+}
+part.IsA = function(_, class) return class == "Part" or class == "BasePart" or class == "PVInstance" end
+part.FindFirstChildWhichIsA = function(_, class) return if class == "SpecialMesh" then fileMesh else nil end
+local tinted = serializer.serialize(part).payload.parts[1]
+assert(tinted.texture.mode == "alpha" and tinted.texture.tint[2] == 0.5 and tinted.texture.tint[3] == 0)
+print("SurfaceAppearance tint, TintMask and SpecialMesh VertexColor serialization checks passed")

@@ -55,7 +55,15 @@ function Invoke-PrismInstaller {
 			Remove-Item -Recurse -Force (Join-Path $installDir $folder) -ErrorAction SilentlyContinue
 		}
 		Write-Step "Removing local Roblox plugin..."
-		Remove-Item -Force (Join-Path $pluginsDir "Prism.rbxm") -ErrorAction SilentlyContinue
+		$pluginFolders = @($pluginsDir)
+		$recorded = Join-Path $installDir "plugin-dirs.txt"
+		if (-not $env:PRISM_PLUGINS_DIR -and (Test-Path $recorded)) { $pluginFolders = @(Get-Content -LiteralPath $recorded -Encoding UTF8) }
+		foreach ($folder in $pluginFolders) {
+			Remove-Item -Force (Join-Path $folder "Prism.rbxm") -ErrorAction SilentlyContinue
+		}
+		foreach ($file in @("installation.json", "plugin-dirs.txt", "cache-dir.txt")) {
+			Remove-Item -Force (Join-Path $installDir $file) -ErrorAction SilentlyContinue
+		}
 		Write-Host ""
 		Write-Ok "Prism has been uninstalled. Raven, your settings and presets were left in place."
 		return
@@ -314,8 +322,8 @@ function Invoke-PrismInstaller {
 		# ------------------------------------------------------------
 
 		Write-Step "Installing startup script..."
-		$arguments = @("--background", "--factory-startup", "--python", (Join-Path $installDir "backend\main.py"), "--",
-			"install", "--raven", $raven, "--blender", $blender)
+		$arguments = @("--background", "--factory-startup", "--python-exit-code", "1", "--python", (Join-Path $installDir "backend\main.py"), "--",
+			"install", "--raven", $raven, "--blender", $blender, "--plugins", $pluginsDir)
 		if ($keyInfo -and $keyInfo.OwnerId) { $arguments += @("--creator", "user:$($keyInfo.OwnerId)") }
 		$startupLog = Join-Path $staging "startup.log"
 		& $blender @arguments *> $startupLog
@@ -348,7 +356,7 @@ function Invoke-PrismInstaller {
 			}
 		}
 		if (-not $started) {
-			Write-Warn "The backend didn't respond yet. Check $(Join-Path $env:LOCALAPPDATA 'Prism\prism.log')."
+			Stop-Install "The backend did not start. Check $(Join-Path $env:LOCALAPPDATA 'Prism\prism.log')."
 		}
 
 		# ------------------------------------------------------------

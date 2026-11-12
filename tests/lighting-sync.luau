@@ -107,7 +107,7 @@ local modules = {
 local storeModule = luau.load(fs.readFile('src/Store.luau'):gsub('%f[%w]const%f[%W]', 'local'), { environment = {
     CFrame = CFrame, Vector2 = roblox.Vector2,
     require = function(name) return assert(modules[name], name) end,
-    game = { GetService = function() return {} end },
+    game = { GetService = function() return { GenerateGUID = function() return "session" end } end },
     task = { spawn = function(fn) table.insert(pending, fn) end,
              delay = function(time, fn) if time == 1 then table.insert(delayed, fn) end end,
              wait = function() coroutine.yield() end },
@@ -170,7 +170,7 @@ local uiModules = setmetatable({
 local uiCode = fs.readFile('src/pages/RenderPage.luau'):gsub('%f[%w]const%f[%W]', 'local'):gsub('return RenderPage%s*$', 'return SettingsSections')
 local sections = luau.load(uiCode, { environment = {
     require = function(name) return uiModules[name] end,
-    game = { GetService = function() return {} end },
+    game = { GetService = function() return { GenerateGUID = function() return "session" end } end },
     UDim2 = roblox.UDim2, UDim = roblox.UDim, Vector2 = roblox.Vector2,
     Enum = roblox.Enum,
     task = { defer = function(fn) fn() end },

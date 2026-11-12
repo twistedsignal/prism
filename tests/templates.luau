@@ -72,3 +72,13 @@ eq((Template.render({ name = "e", header = "[", item = "x", footer = "]" }, {}, 
 local items = Template.renderItems(itemIcon, { sword }, NOW)
 eq(items[1].name, "Fire Sword", "Items carry their names")
 print("templates ok")
+
+for _, name in { 'Sword "Deluxe"', "Sword\\Path", "Line\nBreak", "123Sword", "!!!", "end" } do
+	for index, template in Template.defaults() do
+		if index <= 3 then
+			local output = Template.render(template, { { name = name, assetId = "123" } })
+			if template.header == nil then output = "return {\n" .. output .. "\n}" end
+			assert(pcall(luau.compile, output), output)
+		end
+	end
+end

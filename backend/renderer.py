@@ -422,6 +422,7 @@ def make_smooth_mesh(mesh):
 
     smooth = mesh.copy()
     smooth.name = f"{mesh.name}_smooth"
+    smooth.use_fake_user = True
     bm = bmesh.new()
     try:
         bm.from_mesh(smooth)
@@ -1383,6 +1384,8 @@ class Renderer:
             raise RuntimeError("OBJ imported but contains no mesh objects.")
 
         print_scene_info(objects)
+        for obj in objects:
+            obj.data.use_fake_user = True
         return {
             "collection": collection,
             "objects": objects,
@@ -1395,6 +1398,8 @@ class Renderer:
     def unload(self, key):
         model = self.models.pop(key, None)
         if model is not None:
+            for mesh in [*model["meshes"], *model["smooth_meshes"].values()]:
+                mesh.use_fake_user = False
             for state in model["materials"]:
                 if state["detail"] is not None:
                     state["detail"].use_fake_user = False

@@ -16,3 +16,7 @@ build
 vendor
 backend/VERSION
 backend/PLUGIN_HASH
+
+/installation.json
+/plugin-dirs.txt
+/cache-dir.txt

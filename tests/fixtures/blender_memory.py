@@ -49,5 +49,16 @@ with tempfile.TemporaryDirectory() as directory:
     key = engine.load(Path(keys[0]))
     assert key in engine.models and len(engine.models) == 2, "Evicted model was not imported again"
     engine.render(key, {}, 128, "8")
+    # Keep A while B is evicted, with either alternate shading mesh unused.
+    for smooth in (True, False):
+        engine.load(Path(keys[0]))
+        engine.render(keys[0], {"smooth": not smooth}, 128, "8")
+        engine.render(keys[0], {"smooth": smooth}, 128, "8")
+        engine.load(Path(keys[1]))
+        engine.load(Path(keys[0]))
+        engine.load(Path(keys[2]))
+        for next_smooth in (not smooth, smooth):
+            pixels = engine.render(keys[0], {"smooth": next_smooth}, 128, "8")
+            assert pixels[..., 3].max() > 0.99
 
 print("Blender memory checks passed")

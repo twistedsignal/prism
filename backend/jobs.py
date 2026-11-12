@@ -16,6 +16,8 @@ class Job:
         self.done = threading.Event()
         self.result = None
         self.error = None
+        self.started = False
+        self.cancelled = False
 
 
 class JobQueue:
@@ -36,7 +38,15 @@ class JobQueue:
                 self.latest[client] = job
         self.queue.put(job)
         if not job.done.wait(timeout):
-            raise TimeoutError("Render timed out")
+            with self.lock:
+                if not job.started:
+                    job.cancelled = True
+                    if client is not None and self.latest.get(client) is job:
+                        del self.latest[client]
+                    raise TimeoutError("Render timed out before it started")
+            # Running work has worker-level timeouts. Wait for its outcome so an
+            # export never writes files after its caller has reported failure.
+            job.done.wait()
         if job.error is not None:
             raise job.error
         return job.result
@@ -47,12 +57,15 @@ class JobQueue:
             job = self.queue.get(timeout=timeout)
         except queue.Empty:
             return
-        if job.client is not None:
-            with self.lock:
-                if self.latest.get(job.client) is not job:
-                    job.error = Superseded()
-                    job.done.set()
-                    return
+        with self.lock:
+            if job.cancelled:
+                job.done.set()
+                return
+            if job.client is not None and self.latest.get(job.client) is not job:
+                job.error = Superseded()
+                job.done.set()
+                return
+            job.started = True
         self.busy = True
         try:
             job.result = job.function()

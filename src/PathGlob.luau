@@ -126,7 +126,9 @@ const function compile(glob: string): string
 		end
 	end
 	table.insert(out, "$")
-	return table.concat(out)
+	const pattern = table.concat(out)
+	const valid = pcall(string.find, "", pattern)
+	return if valid then pattern else "^" .. literal(glob) .. "$"
 end
 
 const function hasGlob(text: string): boolean

@@ -95,7 +95,7 @@ def sample_linear(image, uv):
     return top * (1 - weight[..., 1:2]) + bottom * weight[..., 1:2]
 
 
-def raster_triangle(points, width, height):
+def raster_triangle(points, width, height, pixel_center=0.5):
     """Barycentric coverage of a triangle at destination pixel centers."""
     lo = np.maximum(np.floor(points.min(axis=0)).astype(int), 0)
     hi = np.minimum(np.ceil(points.max(axis=0)).astype(int), [width - 1, height - 1])
@@ -104,7 +104,7 @@ def raster_triangle(points, width, height):
     if abs(determinant) < 1e-8 or np.any(hi < lo):
         return None
     yy, xx = np.mgrid[lo[1]:hi[1] + 1, lo[0]:hi[0] + 1]
-    xx, yy = xx + 0.5, yy + 0.5
+    xx, yy = xx + pixel_center, yy + pixel_center
     w0 = ((b[1] - c[1]) * (xx - c[0]) + (c[0] - b[0]) * (yy - c[1])) / determinant
     w1 = ((c[1] - a[1]) * (xx - c[0]) + (a[0] - c[0]) * (yy - c[1])) / determinant
     weights = np.stack((w0, w1, 1 - w0 - w1), axis=-1)
@@ -171,6 +171,7 @@ def bake_r15(corners, size, rgb, base, layers, textures, region):
             foreground[..., 3] *= valid & np.all((graphic_uv >= 0) & (graphic_uv <= 1), axis=-1)
             atlas = over(atlas, tinted(foreground, layer))
         else:
+            covered = np.zeros((height, width), dtype=bool)
             # Project decals into the existing body UV islands without replacing clothing UVs.
             for start in range(0, len(corners), 3):
                 normal = np.mean([corner[2] for corner in corners[start:start + 3]], axis=0)
@@ -182,6 +183,8 @@ def bake_r15(corners, size, rgb, base, layers, textures, region):
                 if raster is None:
                     continue
                 window, weights, inside = raster
+                inside &= ~covered[window]
+                covered[window] |= inside
                 uv = weights @ project(points[start:start + 3] - center, face, projection_size)
                 if layer.get("repeat"):
                     dimensions = size[:2] if face in ("Front", "Back") else (
@@ -249,6 +252,7 @@ def bake(corners, size, rgb, base, layers, textures, native_uv=False, surface_fa
     base_image = (
         image_of(base, textures) if base and base.get("id") in textures else None
     )
+    covered = np.zeros((6, TILE, TILE), dtype=bool)
     for start in range(0, len(corners), 3):
         normal = np.mean([corner[2] for corner in corners[start : start + 3]], axis=0)
         if np.linalg.norm(normal) < 1e-8:
@@ -272,22 +276,14 @@ def bake(corners, size, rgb, base, layers, textures, native_uv=False, surface_fa
         if base_image is None:
             continue
         # Rasterize the original mesh UVs onto the projected face, retaining painted body maps.
-        triangle = uv * (TILE - 1)
-        lo = np.maximum(np.floor(triangle.min(axis=0)).astype(int), 0)
-        hi = np.minimum(np.ceil(triangle.max(axis=0)).astype(int), TILE - 1)
-        a, b, c = triangle
-        determinant = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
-        if abs(determinant) < 1e-8:
+        raster = raster_triangle(uv * (TILE - 1), TILE, TILE, pixel_center=0)
+        if raster is None:
             continue
-        yy, xx = np.mgrid[lo[1] : hi[1] + 1, lo[0] : hi[0] + 1]
-        w0 = ((b[1] - c[1]) * (xx - c[0]) + (c[0] - b[0]) * (yy - c[1])) / determinant
-        w1 = ((c[1] - a[1]) * (xx - c[0]) + (a[0] - c[0]) * (yy - c[1])) / determinant
-        weights = np.stack((w0, w1, 1 - w0 - w1), axis=-1)
-        inside = np.all(weights >= -1e-5, axis=-1)
-        texels = sample(
-            base_image, weights @ original_uvs[start : start + 3], repeat=True
-        )
-        target = tiles[index, lo[1] : hi[1] + 1, lo[0] : hi[0] + 1]
+        window, weights, inside = raster
+        inside &= ~covered[index][window]
+        covered[index][window] |= inside
+        texels = sample(base_image, weights @ original_uvs[start:start + 3], repeat=True)
+        target = tiles[index][window]
         composite = over(target, texels) if base.get("mode") != "alpha" else texels
         target[inside] = composite[inside]
     yy, xx = np.mgrid[0:TILE, 0:TILE]
@@ -297,12 +293,15 @@ def bake(corners, size, rgb, base, layers, textures, native_uv=False, surface_fa
             continue
         image = image_of(layer, textures)
         if layer.get("nativeUv"):
-            # CharacterMesh overlays use the mesh UVs and cover classic clothing.
+            # Each destination texel belongs to one triangle for this layer.
+            covered.fill(False)
             for start in range(0, len(corners), 3):
-                raster = raster_triangle(projected[start:start + 3] * (TILE - 1), TILE, TILE)
+                raster = raster_triangle(projected[start:start + 3] * (TILE - 1), TILE, TILE, pixel_center=0)
                 if raster is None:
                     continue
                 window, weights, inside = raster
+                inside &= ~covered[face_indices[start]][window]
+                covered[face_indices[start]][window] |= inside
                 uv = weights @ original_uvs[start:start + 3]
                 foreground = sample(image, uv, repeat=True).copy()
                 target = tiles[face_indices[start]][window]

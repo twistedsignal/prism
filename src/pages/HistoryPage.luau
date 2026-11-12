@@ -164,6 +164,13 @@ end
 const function HistoryPage(props: Props): Frame
 	const store = props.store
 	const confirming = source(false)
+	const width = source(696)
+	const compact = function(): boolean
+		return width() < 652
+	end
+	const toolbarHeight = function(): number
+		return if compact() then TOOLBAR_HEIGHT * 2 + 8 else TOOLBAR_HEIGHT
+	end
 	store.loadHistory()
 
 	const entries = function(): { Store.HistoryEntry }
@@ -222,6 +229,9 @@ const function HistoryPage(props: Props): Frame
 		Position = UDim2.fromOffset(12, 0),
 		Size = UDim2.new(1, -24, 1, 0),
 		BackgroundTransparency = 1,
+		vide.changed("AbsoluteSize", function(size: Vector2)
+			width(size.X)
+		end),
 
 		Button({
 			text = "‹ Settings",
@@ -237,7 +247,9 @@ const function HistoryPage(props: Props): Frame
 		}),
 		new("TextLabel")({
 			Position = UDim2.fromOffset(310, 0),
-			Size = UDim2.new(1, -652, 0, TOOLBAR_HEIGHT),
+			Size = function()
+				return UDim2.fromOffset(math.max(0, width() - (if compact() then 310 else 652)), TOOLBAR_HEIGHT)
+			end,
 			BackgroundTransparency = 1,
 			Text = function()
 				const count = #entries()
@@ -256,7 +268,9 @@ const function HistoryPage(props: Props): Frame
 			end,
 			variant = "accent",
 			anchorPoint = Vector2.new(1, 0),
-			position = UDim2.new(1, -210, 0, 0),
+			position = function()
+				return UDim2.new(1, -210, 0, if compact() then TOOLBAR_HEIGHT + 8 else 0)
+			end,
 			size = UDim2.fromOffset(124, TOOLBAR_HEIGHT),
 			enabled = function()
 				return #templateEntries() > 0
@@ -268,7 +282,9 @@ const function HistoryPage(props: Props): Frame
 		Button({
 			text = "Refresh",
 			anchorPoint = Vector2.new(1, 0),
-			position = UDim2.new(1, -118, 0, 0),
+			position = function()
+				return UDim2.new(1, -118, 0, if compact() then TOOLBAR_HEIGHT + 8 else 0)
+			end,
 			size = UDim2.fromOffset(84, TOOLBAR_HEIGHT),
 			enabled = props.connected,
 			activated = store.loadHistory,
@@ -279,7 +295,9 @@ const function HistoryPage(props: Props): Frame
 			end,
 			variant = "danger",
 			anchorPoint = Vector2.new(1, 0),
-			position = UDim2.fromScale(1, 0),
+			position = function()
+				return UDim2.new(1, 0, 0, if compact() then TOOLBAR_HEIGHT + 8 else 0)
+			end,
 			size = UDim2.fromOffset(110, TOOLBAR_HEIGHT),
 			enabled = function()
 				return props.connected() and #store.history() > 0
@@ -302,8 +320,8 @@ const function HistoryPage(props: Props): Frame
 		}),
 		new("ScrollingFrame")({
 			Name = "Entries",
-			Position = UDim2.fromOffset(0, TOOLBAR_HEIGHT + 10),
-			Size = UDim2.new(1, 0, 1, -(TOOLBAR_HEIGHT + 10)),
+			Position = function() return UDim2.fromOffset(0, toolbarHeight() + 10) end,
+			Size = function() return UDim2.new(1, 0, 1, -(toolbarHeight() + 10)) end,
 			BackgroundColor3 = Theme.GROUP,
 			BorderSizePixel = 0,
 			ScrollBarThickness = 6,

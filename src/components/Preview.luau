@@ -67,12 +67,26 @@ const function bounds(root: Instance): (Vector3, Vector3)
 end
 
 -- matches the renderer's stance and camera math, so the viewport frames the model like blender does.
-const function frame(clone: Instance, camera: Camera, settings: Types.Settings)
+const function frame(clone: Instance, camera: Camera, settings: Types.Settings, previousPivot: CFrame?)
 	const pitch = math.rad(settings.pitch or 0)
 	const yaw = math.rad(settings.yaw or 0)
 	const roll = math.rad(settings.roll or 0)
+	const stance = CFrame.fromOrientation(pitch, yaw, roll)
 	if clone:IsA("PVInstance") then
-		clone:PivotTo(CFrame.fromOrientation(pitch, yaw, roll))
+		clone:PivotTo(stance)
+	else
+		const parts = {}
+		for _, descendant in clone:GetDescendants() do
+			if descendant:IsA("BasePart") then
+				table.insert(parts, descendant)
+			end
+		end
+		if parts[1] then
+			const delta = stance * (previousPivot or parts[1].CFrame):Inverse()
+			for _, part in parts do
+				part.CFrame = delta * part.CFrame
+			end
+		end
 	end
 	const center, size = bounds(clone)
 	const diameter = math.max(size.X, size.Y, size.Z, 0.01)
@@ -98,6 +112,7 @@ const function frame(clone: Instance, camera: Camera, settings: Types.Settings)
 	camera.FieldOfView = fov
 	camera.CFrame = CFrame.lookAt(center + direction * distance, center)
 		* CFrame.Angles(0, 0, math.rad(settings.cameraRoll or 0))
+	return stance
 end
 
 const function Viewport(props: Props): ViewportFrame
@@ -120,6 +135,7 @@ const function Viewport(props: Props): ViewportFrame
 	local clone: Instance? = nil
 	local clonedFrom: Instance? = nil
 	local clonedVersion = -1
+	local clonePivot: CFrame? = nil
 
 	effect(function()
 		const model = props.currentModel()
@@ -146,6 +162,7 @@ const function Viewport(props: Props): ViewportFrame
 			clone = if ok then copy else nil
 			clonedFrom = model.instance
 			clonedVersion = version
+			clonePivot = nil
 			if clone then
 				-- keep only geometry; scripts and sounds have no business in a viewport.
 				for _, descendant in clone:GetDescendants() do
@@ -157,7 +174,7 @@ const function Viewport(props: Props): ViewportFrame
 			end
 		end
 		if clone then
-			frame(clone, camera, settings)
+			clonePivot = frame(clone, camera, settings, clonePivot)
 		end
 	end)
 
@@ -344,6 +361,9 @@ const function Preview(props: Props): Frame
 			BackgroundTransparency = 1,
 			Text = function()
 				const model = props.currentModel()
+				if model then
+					model.visualVersion()
+				end
 				return if model then model.name else "No model"
 			end,
 			TextXAlignment = Enum.TextXAlignment.Left,

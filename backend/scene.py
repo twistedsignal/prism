@@ -497,6 +497,24 @@ def build(payload, directory):
             warnings.append(part["warning"])
 
         texture = part.get("texture")
+        if isinstance(texture, dict) and texture.get("id") in textures and (
+            "tint" in texture or texture.get("mode") == "tintMask"
+        ):
+            import numpy as np
+
+            tint = vector(texture.get("tint", [1, 1, 1]), "texture tint")
+            mode = texture.get("mode", "overlay")
+            tinted_id = f"tint:{tint}:{mode}:{texture['id']}"
+            if tinted_id not in textures:
+                width, height, raw = decode_texture(textures[texture["id"]])
+                pixels = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 4).astype(np.float32) / 255
+                weight = pixels[:, 3:4] if mode == "tintMask" else 1
+                pixels[:, :3] *= 1 + (np.asarray(tint) - 1) * weight
+                if mode == "tintMask":
+                    pixels[:, 3] = 1
+                textures[tinted_id] = {"width": width, "height": height,
+                    "pixels": base64.b64encode((np.clip(pixels, 0, 1) * 255 + 0.5).astype(np.uint8).tobytes()).decode()}
+            texture = {"id": tinted_id, "mode": "alpha" if mode == "tintMask" else mode}
         rgb = color_of(part)
         if isinstance(part.get("material"), dict) and part["material"].get("name") == "Neon":
             import materials as roblox_materials
@@ -610,7 +628,7 @@ class SceneCache:
         # Resolved bytes change the ID after credential repair, invalidating renderer objects.
         # Bump the prefix when generated textures change, so cached scenes rebuild.
         resolved = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        identifier = scene_id(b"appearance-v12:" + resolved)
+        identifier = scene_id(b"appearance-v13:" + resolved)
         if incomplete:
             identifier += uuid.uuid4().hex[:8]
         directory = self.root / identifier

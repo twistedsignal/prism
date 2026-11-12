@@ -20,7 +20,7 @@ const PROPERTIES = {
 	MaterialVariant = { "Name", "BaseMaterial", "ColorMap", "ColorMapContent", "StudsPerTile" },
 }
 
-const function watch(root: Instance, onChange: () -> ()): () -> ()
+const function watchTree(root: Instance, onChange: () -> ()): () -> ()
 	const connections: { [Instance]: RBXScriptConnection } = {}
 	const function observe(instance: Instance)
 		if connections[instance] then
@@ -63,6 +63,28 @@ const function watch(root: Instance, onChange: () -> ()): () -> ()
 			connection:Disconnect()
 		end
 		table.clear(connections)
+	end
+end
+
+const function watch(root: Instance, onChange: () -> ()): () -> ()
+	if not root:IsA("BasePart") then
+		return watchTree(root, onChange)
+	end
+	local disconnect: () -> () = function() end
+	const function updateScope()
+		disconnect()
+		const parent = root.Parent
+		const scope = if parent and parent:FindFirstChildOfClass("Humanoid") then parent else root
+		disconnect = watchTree(scope, onChange)
+		onChange()
+	end
+	const parent = root.Parent
+	const scope = if parent and parent:FindFirstChildOfClass("Humanoid") then parent else root
+	disconnect = watchTree(scope, onChange)
+	const ancestry = root.AncestryChanged:Connect(updateScope)
+	return function()
+		ancestry:Disconnect()
+		disconnect()
 	end
 end
 

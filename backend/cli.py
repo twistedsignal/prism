@@ -10,6 +10,8 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import installation
+installation.restore()
 import config
 
 INSTRUCTIONS = """Use Prism to render live Roblox Studio parts and models.

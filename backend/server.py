@@ -4,6 +4,7 @@ import base64
 import json
 import re
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -42,7 +43,7 @@ class HttpError(Exception):
 
 def safe_filename(name):
     name = UNSAFE_FILENAME.sub("_", str(name)).strip(" .")
-    name = name[:100].rstrip(" .") or "icon"
+    name = name[:100].encode("utf-8")[:200].decode("utf-8", errors="ignore").rstrip(" .") or "icon"
     return f"_{name}" if RESERVED_FILENAMES.match(name) else name
 
 
@@ -67,20 +68,21 @@ class Bridge:
         settings["textEmojiProvider"] = emoji_provider or self.store.get_config()["emojiProvider"]
         return self.worker.render(scene_id, settings, size, aa, format, text_bounds=text_bounds, progress_callback=progress_callback)
 
-    def output_path(self, folder, name, index, overwrite, pattern):
+    def output_path(self, folder, name, index, overwrite, pattern, reserved=()):
         stem = safe_filename(pattern.replace("{name}", safe_filename(name)).replace("{index}", str(index)))
         path = folder / f"{stem}.png"
         counter = 2
-        while not overwrite and path.exists():
+        while path in reserved or not overwrite and path.exists():
             path = folder / f"{stem} ({counter}).png"
             counter += 1
         return path
 
-    def export(self, items):
+    def export(self, items, upload_folder=None):
         settings_config = self.store.get_config()
         folder = Path(settings_config["outputFolder"]).expanduser()
         folder.mkdir(parents=True, exist_ok=True)
         results = []
+        reserved = set()
         for position, item in enumerate(items, start=1):
             # {index} is the model's position in the plugin's list, not in this request.
             index = item.get("index")
@@ -90,15 +92,29 @@ class Bridge:
             # Where the model lives in Studio, for templates and history.
             origin = {key: item[key] for key in ("source", "parent") if isinstance(item.get(key), str) and item[key]}
             try:
+                if item.get("error"):
+                    raise HttpError(400, str(item["error"]))
+                scene_id = item.get("sceneId")
+                if item.get("payload") is not None and not self.scenes.exists(scene_id):
+                    raw = item["payload"]
+                    if not isinstance(raw, str):
+                        raise HttpError(400, "Scene payload must be JSON text")
+                    scene_id = self.worker.add_scene(raw.encode())["sceneId"]
                 png = self.render(
-                    item.get("sceneId"), item.get("settings"),
+                    scene_id, item.get("settings"),
                     settings_config["renderSize"], settings_config["renderAA"], "png",
                 )
                 path = self.output_path(
-                    folder, name, index, settings_config["overwrite"], settings_config["filenamePattern"],
+                    folder, name, index, settings_config["overwrite"], settings_config["filenamePattern"], reserved,
                 )
+                reserved.add(path)
                 path.write_bytes(png)
-                results.append({"name": name, "path": str(path), **origin})
+                result = {"name": name, "path": str(path), **origin}
+                if upload_folder is not None:
+                    upload_path = upload_folder / f"{position}.png"
+                    upload_path.write_bytes(png)
+                    result["_uploadPath"] = str(upload_path)
+                results.append(result)
             except Exception as error:  # noqa: BLE001 - reported per item
                 results.append({"name": name, "error": error_message(error), **origin})
         return results
@@ -115,8 +131,8 @@ def read_items(body):
     if not isinstance(items, list) or not items:
         raise HttpError(400, "items must be a non-empty list")
     for item in items:
-        if not isinstance(item, dict) or not isinstance(item.get("sceneId"), str):
-            raise HttpError(400, "each item needs a sceneId")
+        if not isinstance(item, dict) or not any(isinstance(item.get(key), str) for key in ("sceneId", "payload", "error")):
+            raise HttpError(400, "each item needs a sceneId, payload, or preparation error")
     return items
 
 
@@ -358,21 +374,23 @@ def make_handler(bridge):
             creator = body.get("creator") or settings_config["defaultCreator"]
             if not isinstance(creator, str) or not config.CREATOR_PATTERN.match(creator):
                 raise HttpError(400, "Choose who to upload to (user:<id> or group:<id>)")
-            results = bridge.jobs.submit(lambda: bridge.export(items), timeout=RENDER_TIMEOUT * len(items))
-            # Uploads wait on Roblox, so they run here rather than blocking renders.
-            resolver = assets.Resolver(config.cache_dir(), lambda: settings_config["ravenPath"])
-            for result in results:
-                if "error" in result:
-                    continue
-                try:
-                    result.update(uploader.upload(
-                        result["path"], result["name"], creator, settings_config["ravenPath"],
-                    ))
-                except uploader.UploadError as error:
-                    result["error"] = str(error)
-                    continue
-                # Open Cloud returns the Decal; ImageLabels need the image inside it.
-                result["imageId"] = resolver.decal_image_id(result["assetId"])
+            with tempfile.TemporaryDirectory(prefix="prism-upload-") as temporary:
+                results = bridge.jobs.submit(lambda: bridge.export(items, Path(temporary)), timeout=RENDER_TIMEOUT * len(items))
+                # Uploads wait on Roblox, so they run here rather than blocking renders.
+                resolver = assets.Resolver(config.cache_dir(), lambda: settings_config["ravenPath"])
+                for result in results:
+                    if "error" in result:
+                        continue
+                    upload_path = result.pop("_uploadPath")
+                    try:
+                        result.update(uploader.upload(
+                            upload_path, result["name"], creator, settings_config["ravenPath"],
+                        ))
+                    except uploader.UploadError as error:
+                        result["error"] = str(error)
+                        continue
+                    # Open Cloud returns the Decal; ImageLabels need the image inside it.
+                    result["imageId"] = resolver.decal_image_id(result["assetId"])
             bridge.store.record_history("upload", results, creator)
             return 200, {"results": results, "creator": creator}
 

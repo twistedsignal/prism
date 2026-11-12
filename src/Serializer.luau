@@ -397,8 +397,13 @@ end
 const function surfaceTexture(context: Context, part: BasePart): { id: string, mode: string }?
 	const appearance = part:FindFirstChildWhichIsA("SurfaceAppearance")
 	if appearance then
-		const mode = if appearance.AlphaMode == Enum.AlphaMode.Transparency then "alpha" else "overlay"
-		return addTexture(context, contentOf(appearance, "ColorMapContent", "ColorMap"), mode)
+		const mode = if appearance.AlphaMode == Enum.AlphaMode.Transparency then "alpha"
+			elseif appearance.AlphaMode.Name == "TintMask" then "tintMask" else "overlay"
+		const texture = addTexture(context, contentOf(appearance, "ColorMapContent", "ColorMap"), mode)
+		if texture then
+			(texture :: any).tint = { appearance.Color.R, appearance.Color.G, appearance.Color.B }
+		end
+		return texture
 	end
 	return nil
 end
@@ -618,6 +623,10 @@ const function serializePart(context: Context, part: BasePart, relative: CFrame)
 				entry.kind = "mesh"
 				entry.mesh = data
 				entry.texture = addTexture(context, contentOf(specialMesh, "TextureContent", "TextureId"), "alpha")
+				if entry.texture then
+					const tint = specialMesh.VertexColor
+					entry.texture.tint = { tint.X, tint.Y, tint.Z }
+				end
 			else
 				entry.kind = "block"
 				entry.warning = PERMISSION_MESH_WARNING

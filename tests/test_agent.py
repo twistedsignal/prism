@@ -57,6 +57,15 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(self.store.get_config(), before)
         self.assertEqual(self.store.get_presets()["Icon"]["cameraRotation"], 20)
 
+    def test_target_id_history_uses_resolved_snapshot_path(self):
+        job = self.broker.submit({"target": "discovered-id"})
+        result = self.finish(job, [{"payload": {"parts": [{}]}, "name": "Crate",
+                                  "path": ["Workspace", "Props.with.dots", "Crate"]}])
+        self.assertEqual(result["status"], "completed")
+        entry = self.store.get_history()[0]
+        self.assertEqual(entry["source"], "Workspace/Props.with.dots/Crate")
+        self.assertEqual(entry["parent"], "Props.with.dots")
+
     def test_upload_repeated_completion_is_idempotent(self):
         job = self.broker.submit({"operation": "upload", "path": "Workspace.Part", "creator": "user:123"})
         with patch.object(agent.uploader, "upload", return_value={"assetId": "123", "moderation": "Unknown"}) as upload, \

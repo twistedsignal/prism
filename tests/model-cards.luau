@@ -46,7 +46,7 @@ modelCard = load("src/components/ModelCard.luau")
 local page = load("src/pages/RenderPage.luau")
 local function model(name)
 	return { name = name, state = source("ready"), warning = source(nil), assetId = source(nil),
-		thumbnailVersion = source(1), thumbnail = name .. " image" }
+		visualVersion = source(0), thumbnailVersion = source(1), thumbnail = name .. " image" }
 end
 local part, ronaldo, other = model("Part"), model("Ronaldo"), model("Other")
 local store = { models = source({ part }), selected = source(1), config = source(nil), schema = source(nil), previewView = source("blender") }
@@ -67,17 +67,20 @@ local function child(card, name)
 	error(name .. " missing")
 end
 local oldCard = list()[1]
-assert(child(oldCard, "Name").Text == "Part")
+assert(child(oldCard, "Name").Text() == "Part")
 -- Replace the first selected part with a model, as in the reported screenshot.
 part.thumbnail = nil -- Store destroys images belonging to deselected items.
 store.models({ ronaldo })
 local card = list()[1]
 assert(card ~= oldCard, "The removed Part card was reused for Ronaldo")
-assert(card.Name == "Ronaldo" and child(card, "Name").Text == "Ronaldo")
+assert(card.Name == "Ronaldo" and child(card, "Name").Text() == "Ronaldo")
 assert(child(card, "Thumbnail").ImageContent() == "Ronaldo image")
 ronaldo.thumbnail = "updated render"
 ronaldo.thumbnailVersion(2)
 assert(child(card, "Thumbnail").ImageContent() == "updated render")
+ronaldo.name = "Renamed"
+ronaldo.visualVersion(1)
+assert(child(card, "Name").Text() == "Renamed", "Renaming updates the retained card")
 -- Retained cards follow the model when their positions change.
 store.models({ other, ronaldo })
 assert(table.find(list(), card))

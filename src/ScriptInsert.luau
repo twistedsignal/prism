@@ -61,6 +61,60 @@ const function indented(text: string, indent: string): { string }
 	return lines
 end
 
+-- Tokens retain source positions while comments and whitespace are ignored.
+const function tokens(text: string): { { text: string, last: number } }
+	const result = {}
+	local at = 1
+	while at <= #text do
+		const start = at
+		const char = string.sub(text, at, at)
+		const comment = string.sub(text, at, at + 1) == "--"
+		const bracket = if comment then at + 2 else at
+		const equals = string.match(text, "^%[(=*)%[", bracket)
+		if equals ~= nil then
+			const closing = `]{equals}]`
+			const close = string.find(text, closing, bracket + #equals + 2, true)
+			at = if close then close + #closing else #text + 1
+		elseif comment then
+			at = string.find(text, "\n", at, true) or #text + 1
+		elseif char == '"' or char == "'" or char == "`" then
+			at += 1
+			while at <= #text do
+				const next = string.sub(text, at, at)
+				at += if next == "\\" then 2 else 1
+				if next == char then break end
+			end
+		elseif string.match(char, "[%a_]") then
+			at += 1
+			while string.match(string.sub(text, at, at), "[%w_]") do
+				at += 1
+			end
+		else
+			at += 1
+		end
+		if not comment and not string.match(char, "%s") then
+			table.insert(result, { text = string.sub(text, start, at - 1), last = at - 1 })
+		end
+	end
+	return result
+end
+
+const function assignmentKey(line: string): string?
+	const list = tokens(line)
+	const first = list[1]
+	if first == nil or not (first.text == "[" or string.match(first.text, "^[%a_][%w_]*$")) then
+		return nil
+	end
+	const parts = {}
+	for _, token in list do
+		if token.text == "=" then
+			return table.concat(parts)
+		end
+		table.insert(parts, token.text)
+	end
+	return nil
+end
+
 -- forms the name takes in a line that identifies an entry.
 const function nameNeedles(name: string): { string }
 	const needles = { `"{name}"`, `'{name}'` }
@@ -88,6 +142,21 @@ const function findExisting(lines: { string }, item: Item): (number?, number?)
 	end
 	const needles = nameNeedles(item.name)
 	const itemLines = splitLines(item.text)
+	const key = assignmentKey(itemLines[1])
+	if key and #itemLines == 1 then
+		for index, line in lines do
+			if assignmentKey(line) == key then
+				return index, index
+			end
+		end
+	end
+	-- The rendered name literal includes the template's escaping and filters.
+	for _, line in itemLines do
+		const list = tokens(line)
+		if list[1] and list[1].text == "Name" and list[2] and list[2].text == "=" and list[3] then
+			table.insert(needles, list[3].text)
+		end
+	end
 	local offset: number? = nil
 	for index, line in itemLines do
 		if lineHas(line, needles) then
@@ -117,16 +186,14 @@ end
 
 -- adds a separator to the line before an insertion so the table stays valid.
 const function ensureSeparator(lines: { string }, before: number)
-	for index = before - 1, 1, -1 do
-		const content = trim(lines[index])
-		if content == "" or string.sub(content, 1, 2) == "--" then
-			continue
+	const prefix = table.concat(lines, "\n", 1, before - 1)
+	const list = tokens(prefix)
+	const last = list[#list]
+	if last and last.text ~= "," and last.text ~= ";" and last.text ~= "{" and last.text ~= "(" then
+		const updated = splitLines(string.sub(prefix, 1, last.last) .. "," .. string.sub(prefix, last.last + 1))
+		for index, line in updated do
+			lines[index] = line
 		end
-		const last = string.sub(content, -1)
-		if last ~= "," and last ~= ";" and last ~= "{" and last ~= "(" then
-			lines[index] ..= ","
-		end
-		return
 	end
 end
 

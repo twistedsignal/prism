@@ -307,6 +307,14 @@ class RuntimeTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("PRISM_TEST_BLENDER"), "Set PRISM_TEST_BLENDER to run Blender integration")
 class BlenderWorkerTests(unittest.TestCase):
+    def test_installer_python_errors_return_failure(self):
+        result = subprocess.run([
+            os.environ["PRISM_TEST_BLENDER"], "--background", "--factory-startup",
+            "--python-exit-code", "1", "--python-expr", "raise RuntimeError('fixture install failure')",
+        ], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+
     def test_real_blender_part_surfaces(self):
         result = subprocess.run([
             os.environ["PRISM_TEST_BLENDER"], "--background", "--factory-startup",
